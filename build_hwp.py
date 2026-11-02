@@ -145,14 +145,14 @@ class BaseBuilder:
         self._p(text, "sub", align, before=6, after=6, keep=True)
 
     def h(self, text):
-        self._p(text, "head", "JUSTIFY", before=8, after=2, keep=True)
+        self._p(text, "head", "JUSTIFY", before=14, after=4, keep=True)
 
-    def p(self, text, indent=0, hang=0):
-        self._p(text, "body", "JUSTIFY", indent=indent, hang=hang)
+    def p(self, text, indent=0, hang=0, after=6):
+        self._p(text, "body", "JUSTIFY", indent=indent, hang=hang, after=after)
 
     def items(self, lines, indent=4):
         for line in lines:
-            self.p(line, indent=indent)
+            self.p(line, indent=indent, after=3)
 
     def center(self, text):
         self._p(text, "body", "CENTER")
@@ -161,7 +161,7 @@ class BaseBuilder:
         self._p(text, "body", "RIGHT")
 
     def note(self, text):
-        self._p(text, "note", "JUSTIFY")
+        self._p(text, "note", "JUSTIFY", before=2, after=4)
 
     def small(self, text):
         self._p(text, "small", "JUSTIFY")
@@ -404,6 +404,7 @@ class DocxBuilder(BaseBuilder):
         pf.space_before, pf.space_after = Pt(before), Pt(after)
         pf.line_spacing = 1.3
         pf.keep_with_next = keep
+        pf.widow_control = True  # 문단의 첫 줄·끝 줄 하나만 다른 쪽에 떨어지지 않게 (한글: 외톨이줄 보호)
         size, bold, color = self.spec[kind]
         self._runs(para, text, size, bold, color)
         self._last = para
@@ -428,7 +429,7 @@ class DocxBuilder(BaseBuilder):
             col.w = Mm(170 * w / sum(weights))
         # 셀 안쪽 여백도 명시한다 (없으면 한글이 위·아래 여백을 따로 넣어 행이 높아짐)
         mar = OxmlElement("w:tblCellMar")
-        for side, val in (("top", 0), ("left", 108), ("bottom", 0), ("right", 108)):
+        for side, val in (("top", 57), ("left", 108), ("bottom", 57), ("right", 108)):
             el = OxmlElement(f"w:{side}")
             el.set(qn("w:w"), str(val))
             el.set(qn("w:type"), "dxa")
@@ -441,7 +442,7 @@ class DocxBuilder(BaseBuilder):
                 for i, line in enumerate(val.split("\n")):
                     para = cell.paragraphs[0] if i == 0 else cell.add_paragraph()
                     para.paragraph_format.space_after = 0
-                    para.paragraph_format.line_spacing = 1.0  # 명시하지 않으면 한글이 160%로 연다
+                    para.paragraph_format.line_spacing = 1.2  # 명시하지 않으면 한글이 160%로 연다
                     self._runs(para, line, 10.5)
                 if header and r == 0:
                     shd = OxmlElement("w:shd")
@@ -452,7 +453,7 @@ class DocxBuilder(BaseBuilder):
         gap = self.d.add_paragraph()
         gap.paragraph_format.line_spacing = 1.0
         gap.paragraph_format.space_after = 0
-        self._runs(gap, " ", 6)
+        self._runs(gap, " ", 8)
 
     def picture(self, path, width_mm):
         from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -909,7 +910,9 @@ def doc_notice(b):
         "진행할 수 있으며, 그 비용은 귀하에게 청구하겠습니다.", hang=4)
     b.p(f"6. (경매절차) 본인은 {C['법원']} {C['경매사건']} 부동산경매절차에서 배당요구를 마쳤으며, "
         "그 절차에서도 임차인으로서의 권리를 행사하겠습니다.", hang=4)
-    b.right(f"{C['발송일']}    발신인  {C['신청인']}")  # 한 쪽에 맞추려 한 줄로
+    b.keep_last()  # 마지막 항과 날짜·발신인 줄이 서로 다른 쪽으로 갈라지지 않게
+    b._p("", "body", "LEFT", keep=True)
+    b.right(f"{C['발송일']}    발신인  {C['신청인']}")
 
 
 def doc_poa(b):
@@ -1005,9 +1008,9 @@ def doc_auction_correction(b):
     b.page_break()
     b.title("별지  2층 평면도 비교 사진")
     b.caption("[사진 1]  공부상 호실 표시")
-    b.picture(PLAN_IMAGES[0], width_mm=120)
+    b.picture(PLAN_IMAGES[0], width_mm=112)
     b.caption("[사진 2]  현재 현장 호실 표시")
-    b.picture(PLAN_IMAGES[1], width_mm=120)
+    b.picture(PLAN_IMAGES[1], width_mm=112)
     b.small("빨간색 실선: 제출인 점유 부분(공부상 202호 전유부분 전체 = 현장 203호) / "
             "파란색 실선: 다른 호실 / 주황색 선: 현장에서 나누어 사용하는 경계. "
             "사진 1의 호실 번호는 도면에 인쇄된 호실 표기(201호~501호, 202호~502호, 203호~503호, "
@@ -1042,8 +1045,7 @@ def active_docs():
 def hangul_from_word(word_dir, out, combined_name):
     """설치된 한글 프로그램으로 Word 출력을 열어 한글 원본(.hwp)으로 저장한다.
 
-    빈칸 노란 표시·표 열 너비·사진이 Word와 같게 옮겨진다. 한글은 Word의 1.3배 줄 간격을
-    조금 넓게 그리므로 본문 줄 간격을 125%로 맞춰 쪽수를 Word와 비슷하게 한다.
+    표 열 너비·사진이 Word와 같게 옮겨진다. 본문 줄 간격은 읽기 편하도록 160%(한글 기본값)로 맞춘다.
     한글이 없거나 자동화가 안 되면 False 를 돌려준다.
     """
     try:
@@ -1069,15 +1071,19 @@ def hangul_from_word(word_dir, out, combined_name):
             hwp.Run("SelectAll")
             ps = hwp.HParameterSet.HParaShape
             hwp.HAction.GetDefault("ParagraphShape", ps.HSet)
-            ps.LineSpacingType, ps.LineSpacing = 0, 125
+            ps.LineSpacingType, ps.LineSpacing = 0, 160
             hwp.HAction.Execute("ParagraphShape", ps.HSet)
             hwp.Run("Cancel")
-            # 표를 글자처럼 취급해야 제목 앞쪽으로 표가 떠서 배치되지 않는다
+            # 작은 표는 글자처럼 취급해야 제목 앞쪽으로 떠서 배치되지 않는다.
+            # 큰 표(10cm 넘음)는 글자처럼 취급하면 쪽 사이에서 나뉘지 않아 통째로 다음 쪽으로 밀리므로 그대로 둔다
             ctrl = hwp.HeadCtrl
             while ctrl:
                 if ctrl.CtrlID == "tbl":
                     prop = ctrl.Properties
-                    prop.SetItem("TreatAsChar", True)
+                    if prop.Item("Height") < 100 * MM:
+                        prop.SetItem("TreatAsChar", True)
+                    else:
+                        prop.SetItem("PageBreak", 1)  # 쪽 경계에서 칸 중간이 아니라 줄 단위로 나눈다
                     ctrl.Properties = prop
                 ctrl = ctrl.Next
             if not hwp.SaveAs(os.path.join(out, name + ".hwp"), "HWP", ""):
