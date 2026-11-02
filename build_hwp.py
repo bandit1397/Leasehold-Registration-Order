@@ -5,7 +5,9 @@
 확인되지 않은 사항은 모두 000 으로 남긴다.
 
 사용법: python build_hwp.py [출력폴더]
-필요: pip install python-hwpx reportlab python-docx   (PDF 글꼴: Windows 바탕·맑은 고딕)
+필요: pip install python-hwpx reportlab python-docx pywin32   (PDF 글꼴: Windows 바탕·맑은 고딕)
+HWP: 한글 프로그램이 설치되어 있으면 Word 출력을 한글로 열어 저장한다(가장 정확).
+     한글이 없으면 python-hwpx 로 직접 만든다(빈칸 노란 표시 없음).
 """
 import os
 import re
@@ -70,7 +72,7 @@ class BaseBuilder:
         self._p(text, "title", "CENTER", after=14)
 
     def sub(self, text, align="CENTER"):
-        self._p(text, "sub", align, before=6, after=6)
+        self._p(text, "sub", align, before=6, after=6, keep=True)
 
     def h(self, text):
         self._p(text, "head", "JUSTIFY", before=8, after=2, keep=True)
@@ -104,7 +106,7 @@ class BaseBuilder:
         self.blank()
         self.center(date)
         self.blank()
-        self.right(f"{who}  {name}  (서명 또는 날인)")
+        self.right(f"{who}  {name}")
         if court:
             self.blank()
             self._p(f"{C['법원']} 귀중", "sub", "CENTER", before=12)
@@ -340,6 +342,18 @@ class DocxBuilder(BaseBuilder):
         weights = weights or [1] * len(rows[0])
         t = self.d.add_table(rows=len(rows), cols=len(rows[0]))
         t.style = "Table Grid"
+        t.autofit = False
+        # 한글은 칸 너비(tcW)가 아니라 표 격자(gridCol)를 따르므로 격자에도 비율을 넣는다
+        for col, w in zip(t._tbl.tblGrid.gridCol_lst, weights):
+            col.w = Mm(170 * w / sum(weights))
+        # 셀 안쪽 여백도 명시한다 (없으면 한글이 위·아래 여백을 따로 넣어 행이 높아짐)
+        mar = OxmlElement("w:tblCellMar")
+        for side, val in (("top", 0), ("left", 108), ("bottom", 0), ("right", 108)):
+            el = OxmlElement(f"w:{side}")
+            el.set(qn("w:w"), str(val))
+            el.set(qn("w:type"), "dxa")
+            mar.append(el)
+        t._tbl.tblPr.append(mar)
         for r, row in enumerate(rows):
             for c, val in enumerate(row):
                 cell = t.cell(r, c)
@@ -347,6 +361,7 @@ class DocxBuilder(BaseBuilder):
                 for i, line in enumerate(val.split("\n")):
                     para = cell.paragraphs[0] if i == 0 else cell.add_paragraph()
                     para.paragraph_format.space_after = 0
+                    para.paragraph_format.line_spacing = 1.0  # 명시하지 않으면 한글이 160%로 연다
                     self._runs(para, line, 10.5)
                 if header and r == 0:
                     shd = OxmlElement("w:shd")
@@ -374,10 +389,10 @@ def doc_application(b):
     b.title("주택임차권등기명령 신청서")
     b.table([
         ["구분", "내용"],
-        ["사건번호", "2026카임000 (접수 시 법원이 부여)"],
+        ["사건번호", "2026카임000"],
         ["신청인(임차인)", f"성명: {C['신청인']} / 주민등록번호: 000000-0000000\n"
                        f"주소: {C['신청인주소']}\n연락처: {C['연락처']}"],
-        ["피신청인(임대인)", f"성명: {C['피신청인']}\n주소: 000 (등기사항전부증명서상 소유자 주소)\n"
+        ["피신청인(임대인)", f"성명: {C['피신청인']}\n주소: 000\n"
                          "연락처: 000-0000-0000"],
     ], weights=[25, 75])
 
@@ -426,7 +441,7 @@ def doc_application(b):
     b.p(f"임대차가 종료되었음에도 신청인은 임차보증금 금 {C['보증금']}원을 전혀 반환받지 못하였습니다. "
         f"미납 차임 금 {C['연체차임']}원과 미납 관리비 금 {C['연체관리비']}원(합계 금 {C['연체합계']}원)을 "
         f"모두 공제하더라도 반환받지 못한 보증금은 금 {C['잔액']}원이고, 관리비 공제가 인정되지 않을 "
-        f"경우에는 금 {C['잔액_차임만']}원입니다. 정확한 미납액은 000 확인 후 보정하겠습니다. "
+        f"경우에는 금 {C['잔액_차임만']}원입니다. "
         f"신청인은 {C['발송일']} 피신청인에게 내용증명우편으로 보증금 반환을 청구하였습니다"
         "(갑 제12호증).", hang=4)
     b.h("6. 경매절차와의 관계")
@@ -447,7 +462,7 @@ def doc_application(b):
         "5. 신청이유 보충서                                 1통",
         "6. 별지 1 부동산 및 임차목적물의 표시            1통",
         "7. 별지 2 임차목적물 위치 표시 도면              1통",
-        "8. 증거설명서 및 갑 제1호증 내지 갑 제12호증     각 1통",
+        "8. 증거설명서 및 갑 제1호증 내지 갑 제13호증     각 1통",
         "   (위 1~4호 서류는 갑 제6·1·3·7호증과 같음)",
         "9. 송달료·인지·등록면허세·등기신청수수료 납부서  각 1통",
     ])
@@ -481,6 +496,10 @@ def doc_supplement(b):
         "공부상 제202호임이 도면 자체로 드러납니다.",
         "바. 위 사실은 건축물현황도(발급일 2026. 00. 00.)와 등기사항전부증명서상 제202호 전유면적 "
         "000㎡의 대조로 확인됩니다.",
+        "사. 이와 같은 공부상 호실과 현장 호실의 불일치는 신청인의 호실에만 있는 것이 아니라, 현재 "
+        "2층에서 주거로 사용되는 현장 제202호부터 제207호까지 모든 호실에 공통으로 나타납니다. 건물 "
+        "전체에 현장 호실 번호가 공부와 다르게 붙어 있기 때문이며, 신청인의 계약서·주민등록에 적힌 "
+        "「제203호」도 같은 원인에서 비롯된 것입니다.",
     ])
 
     b.h("3. 계속 점유")
@@ -511,7 +530,9 @@ def doc_supplement(b):
     b.h("6. 소명의 취지")
     b.p("신청인이 임차한 목적물은 공부상 나동 제202호 전유부분 전체이며, 계약서 및 현장의 「제203호」는 "
         "같은 공간을 가리키는 현장 호실 표시에 불과합니다. 따라서 임차권등기는 공부상 나동 제202호 "
-        "전유부분 전체에 관하여 이루어져야 함을 소명합니다.", hang=4)
+        "전유부분 전체에 관하여 이루어져야 함을 소명합니다. 한편 공부상 제203호에 관하여는 이미 다른 "
+        "임차인의 임차권등기가 마쳐져 있으나(갑 제13호증), 신청인의 등기는 공부상 제202호에 관한 것이므로 "
+        "그 등기와 목적물이 겹치지 않습니다.", hang=4)
     b.sign()
 
 
@@ -542,7 +563,6 @@ def doc_schedule1(b):
     b.p("임대차계약서 및 현장 출입문에는 「제203호」로 표시되어 있으나, 이는 공부상 나동 제202호 "
         "전유부분 전체와 동일한 공간을 가리키는 현장 호실 표시임. 끝.", indent=4)
     b.blank()
-    b.note("※ 1~3항은 최신 등기사항전부증명서의 표제부 기재를 한 글자도 바꾸지 않고 옮겨 적으십시오.")
 
 
 def doc_schedule2(b):
@@ -561,8 +581,11 @@ def doc_schedule2(b):
         ["제202호 (빨간색)", "제203호 (빨간색)",
          "임차목적물 — 나누지 않고 전체를 그대로 사용, 호실 번호만 바뀜"],
         ["제203호, 제204호", "제204호 ~ 제207호",
-         "공부상 2개 호실을 현장에서 4개로 나누어 사용 (사진 2 주황색 선)"],
+         "공부상 2개 호실을 현장에서 4개로 나누어 사용 (사진 2 주황색 선). "
+         "공부상 제203호에는 다른 임차인의 임차권등기가 마쳐져 있음 (갑 제13호증)"],
     ], weights=[24, 24, 52])
+    b.note("※ 현재 2층에서 주거로 사용되는 현장 제202호부터 제207호까지 모든 호실이 공부상 호실과 번호가 "
+           "다르며, 신청인의 계약서·주민등록상 「제203호」도 같은 원인에서 비롯된 현장 호실 표시임.")
     b.h("2. 임차목적물의 표시")
     b.table([
         ["구분", "내용"],
@@ -583,7 +606,7 @@ def doc_schedule2(b):
         "공부상 ○○빌 나동 제202호 전유부분 전체에 해당하는 임차목적물임을 표시한다.")
     b.items([
         f"작성일 : {C['작성일']}",
-        f"작성자 : 신청인 {C['신청인']}  (서명 또는 날인)",
+        f"작성자 : 신청인 {C['신청인']}",
     ], indent=0)
 
 
@@ -620,12 +643,9 @@ def doc_settlement(b):
         ["(−) 미납 관리비", f"{C['연체관리비']}원"],
         ["(=) 신청인 주장 반환잔액", f"{C['잔액']}원"],
     ], weights=[65, 35])
-    b.h("5. 확인이 필요한 사항")
+    b.h("5. 그 밖의 공제 항목")
     b.items([
-        f"가. 신청인 측이 파악한 미납 총액 1,200,000원과 위 항목별 합계 {C['연체합계']}원 사이에 "
-        "40,000원의 차이가 있음. 월별 미납 내역으로 확정할 것(000).",
-        f"나. 위 차이는 해지의 효력에 영향이 없음(차임만으로 {C['연체차임']}원 > 2기 {C['2기차임']}원).",
-        "다. 다툼이 있는 공제 항목(연체료·원상복구비 등): 000",
+        "가. 다툼이 있는 공제 항목(연체료·원상복구비 등): 000",
     ])
     b.h("6. 신청인의 입장")
     b.p("신청인은 확정된 미납 차임과 정당한 관리비는 보증금에서 정산할 의사가 있으나, 그 밖의 공제 항목과 "
@@ -655,7 +675,6 @@ def doc_affidavit(b):
     ])
     b.p("위 내용은 본인이 직접 경험한 사실이며, 추측이나 전해 들은 내용은 기재하지 않았습니다.")
     b.sign(who="확인인", name="000", court=False)
-    b.note("※ 확인인의 신분증 사본(또는 인감증명서)을 첨부하십시오.")
 
 
 def doc_evidence(b):
@@ -678,8 +697,9 @@ def doc_evidence(b):
          "배당요구 및 목적물 표시 정정 경위"],
         ["갑 제11호증", "사실확인서", "2026. 00. 00.", "현장 점유 및 호실 대응관계"],
         ["갑 제12호증", "내용증명 및 우체국 접수증", C["발송일"], "계약 종료 확인 및 보증금 반환 청구"],
+        ["갑 제13호증", "등기사항전부증명서(나동 203호)", "2026. 00. 00.",
+         "공부상 제203호에 다른 임차인의 임차권등기가 마쳐진 사실, 신청인 등기(제202호)와 목적물이 겹치지 않음"],
     ], weights=[14, 28, 16, 42])
-    b.note("※ 확보하지 못한 증거는 목록에서 삭제하고 번호를 다시 매기십시오.")
     b.sign(court=True)
 
 
@@ -708,6 +728,7 @@ def doc_checklist(b):
         ["□", "경매 배당요구서·소명자료 제출서·정정 소명서 사본", C["경매사건"]],
         ["□", "사실확인서·증거설명서", "확보 시"],
         ["□", "내용증명 사본·우체국 접수증", f"{C['발송일']} 발송분 (갑 제12호증)"],
+        ["□", "등기사항전부증명서(나동 제203호)", "을구 임차권등기 보이게, 다른 임차인 주민등록번호 뒷자리 가림 (갑 제13호증)"],
         ["□", "위임장·가족관계증명서", "가족이 대리 접수할 때만"],
     ], weights=[8, 52, 40])
     b.h("3. 비용 (접수 창구·위택스에서 최종 확정)")
@@ -761,13 +782,11 @@ def doc_notice(b):
         "진행할 수 있으며, 그 비용은 귀하에게 청구하겠습니다.", hang=4)
     b.p(f"6. (경매절차) 본인은 {C['법원']} {C['경매사건']} 부동산경매절차에서 배당요구를 마쳤으며, "
         "그 절차에서도 임차인으로서의 권리를 행사하겠습니다.", hang=4)
-    b.right(f"{C['발송일']}    발신인  {C['신청인']}  (서명 또는 날인)")  # 한 쪽에 맞추려 한 줄로
+    b.right(f"{C['발송일']}    발신인  {C['신청인']}")  # 한 쪽에 맞추려 한 줄로
 
 
 def doc_poa(b):
     b.title("위  임  장")
-    b.note("※ 신청인 본인이 아닌 가족 등이 접수할 때만 사용합니다. 비변호사 대리의 허용 여부와 "
-           "소송대리허가신청 필요 여부는 접수 전 법원 민사신청과에 확인하십시오.")
     b.table([
         ["구분", "내용"],
         ["수임인 성명", "000"],
@@ -817,7 +836,11 @@ def doc_auction_correction(b):
         "다. 현장에서는 공부상 201호가 201호·202호로, 공부상 203호·204호가 204호~207호로 나뉘어 "
         "사용되고 있으나, 공부상 202호는 나뉘지 않은 채 출입문 표시만 203호로 바뀌어 사용되고 "
         "있습니다(별지 사진 2).",
-        "라. 따라서 제출인이 점유하는 현장 203호는 공부상 202호의 일부가 아니라, 확장형 발코니·원룸·"
+        "라. 이와 같은 공부상 호실과 현장 호실의 불일치는 제출인의 호실에만 있는 것이 아니라, 현재 "
+        "2층에서 주거로 사용되는 현장 202호부터 207호까지 모든 호실에 공통으로 나타납니다. 건물 "
+        "전체에 현장 호실 번호가 공부와 다르게 붙어 있기 때문이며, 제출인의 계약서·주민등록에 적힌 "
+        "「203호」도 같은 원인에서 비롯된 것입니다.",
+        "마. 따라서 제출인이 점유하는 현장 203호는 공부상 202호의 일부가 아니라, 확장형 발코니·원룸·"
         "현관·욕실로 이루어진 공부상 202호 전유부분 전체이며, 제출인이 이를 단독으로 점유하고 있습니다.",
     ])
 
@@ -844,7 +867,7 @@ def doc_auction_correction(b):
         "이미 제출하였으므로 이를 원용합니다.", indent=4)
     b.blank()
     b.center(C["작성일"])
-    b.right(f"위 제출인(임차인)  {C['신청인']}  (서명 또는 날인)")
+    b.right(f"위 제출인(임차인)  {C['신청인']}")
     b._p(f"{C['법원']} 경매000계 귀중", "sub", "CENTER", before=12)
 
     b.page_break()
@@ -874,16 +897,63 @@ DOCS = [
 ]
 
 
+def hangul_from_word(word_dir, out, combined_name):
+    """설치된 한글 프로그램으로 Word 출력을 열어 한글 원본(.hwp)으로 저장한다.
+
+    빈칸 노란 표시·표 열 너비·사진이 Word와 같게 옮겨진다. 한글은 Word의 1.3배 줄 간격을
+    조금 넓게 그리므로 본문 줄 간격을 125%로 맞춰 쪽수를 Word와 비슷하게 한다.
+    한글이 없거나 자동화가 안 되면 False 를 돌려준다.
+    """
+    try:
+        import win32com.client
+        hwp = win32com.client.gencache.EnsureDispatch("HWPFrame.HwpObject")
+    except Exception as e:
+        print("한글 자동화를 쓸 수 없음 → python-hwpx 로 만듦:", e)
+        return False
+    try:
+        hwp.RegisterModule("FilePathCheckDLL", "FilePathCheckerModule")
+    except Exception:
+        pass  # 보안 모듈이 없으면 한글이 파일 접근 허용 여부를 물어본다
+    try:
+        names = [name for name, _ in DOCS] + [combined_name]
+        for name in names:
+            hwp.Open(os.path.join(word_dir, name + ".docx"), "", "forceopen:true")
+            hwp.Run("SelectAll")
+            ps = hwp.HParameterSet.HParaShape
+            hwp.HAction.GetDefault("ParagraphShape", ps.HSet)
+            ps.LineSpacingType, ps.LineSpacing = 0, 125
+            hwp.HAction.Execute("ParagraphShape", ps.HSet)
+            hwp.Run("Cancel")
+            # 표를 글자처럼 취급해야 제목 앞쪽으로 표가 떠서 배치되지 않는다
+            ctrl = hwp.HeadCtrl
+            while ctrl:
+                if ctrl.CtrlID == "tbl":
+                    prop = ctrl.Properties
+                    prop.SetItem("TreatAsChar", True)
+                    ctrl.Properties = prop
+                ctrl = ctrl.Next
+            hwp.SaveAs(os.path.join(out, name + ".hwp"), "HWP", "")
+            if name == combined_name:
+                hwp.SaveAs(os.path.join(out, name + ".hwpx"), "HWPX", "")
+            print(f"{name}.hwp  {hwp.PageCount}쪽")
+            hwp.Clear(1)
+    finally:
+        hwp.Quit()
+    return True
+
+
 def main():
-    out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "서류")
+    out = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "서류")
     pdf_out = os.path.join(out, "PDF")
     word_out = os.path.join(out, "Word")
     os.makedirs(pdf_out, exist_ok=True)
     os.makedirs(word_out, exist_ok=True)
     combined_name = "00_임차권등기명령_신청서류_전체합본"
-    for builder_cls, folder, ext in ((HwpBuilder, out, ".hwp"),
-                                     (PdfBuilder, pdf_out, ".pdf"),
-                                     (DocxBuilder, word_out, ".docx")):
+    for builder_cls, folder, ext in ((PdfBuilder, pdf_out, ".pdf"),
+                                     (DocxBuilder, word_out, ".docx"),
+                                     (HwpBuilder, out, ".hwp")):
+        if builder_cls is HwpBuilder and hangul_from_word(word_out, out, combined_name):
+            continue
         for name, fn in DOCS:
             b = builder_cls()
             fn(b)
