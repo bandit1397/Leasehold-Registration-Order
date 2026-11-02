@@ -138,6 +138,9 @@ def image_size(path):
 class BaseBuilder:
     """서류 본문 함수(doc_*)가 쓰는 공통 인터페이스. 출력 형식은 하위 클래스가 정한다."""
 
+    line = 1.6        # 본문 줄 간격 (Word 배수 = 한글 %, 1.6 → 160%)
+    para_after = 6    # 문단 뒤 간격(pt)
+
     def title(self, text):
         self._p(text, "title", "CENTER", after=14)
 
@@ -147,8 +150,9 @@ class BaseBuilder:
     def h(self, text):
         self._p(text, "head", "JUSTIFY", before=14, after=4, keep=True)
 
-    def p(self, text, indent=0, hang=0, after=6):
-        self._p(text, "body", "JUSTIFY", indent=indent, hang=hang, after=after)
+    def p(self, text, indent=0, hang=0, after=None):
+        self._p(text, "body", "JUSTIFY", indent=indent, hang=hang,
+                after=self.para_after if after is None else after)
 
     def items(self, lines, indent=4):
         for line in lines:
@@ -402,7 +406,7 @@ class DocxBuilder(BaseBuilder):
         pf.left_indent = Mm(indent)
         pf.first_line_indent = Mm(hang)
         pf.space_before, pf.space_after = Pt(before), Pt(after)
-        pf.line_spacing = 1.3
+        pf.line_spacing = self.line
         pf.keep_with_next = keep
         pf.widow_control = True  # 문단의 첫 줄·끝 줄 하나만 다른 쪽에 떨어지지 않게 (한글: 외톨이줄 보호)
         size, bold, color = self.spec[kind]
@@ -882,6 +886,7 @@ def doc_checklist(b):
 
 
 def doc_notice(b):
+    b.line, b.para_after = 1.45, 4   # 내용증명은 1쪽으로 (줄 간격 145%)
     b.title("내 용 증 명")
     b.table([
         ["수신인", f"{C['피신청인']} (주소: {C['피신청인주소']}, 연락처: {C['피신청인연락처']})"],
@@ -913,6 +918,7 @@ def doc_notice(b):
     b.keep_last()  # 마지막 항과 날짜·발신인 줄이 서로 다른 쪽으로 갈라지지 않게
     b._p("", "body", "LEFT", keep=True)
     b.right(f"{C['발송일']}    발신인  {C['신청인']}")
+    b.line, b.para_after = BaseBuilder.line, BaseBuilder.para_after  # 합본의 다음 서류는 원래 간격
 
 
 def doc_poa(b):
@@ -1045,7 +1051,7 @@ def active_docs():
 def hangul_from_word(word_dir, out, combined_name):
     """설치된 한글 프로그램으로 Word 출력을 열어 한글 원본(.hwp)으로 저장한다.
 
-    표 열 너비·사진이 Word와 같게 옮겨진다. 본문 줄 간격은 읽기 편하도록 160%(한글 기본값)로 맞춘다.
+    표 열 너비·사진·문단별 줄 간격(Word 1.6배 → 한글 160%)이 Word와 같게 옮겨진다.
     한글이 없거나 자동화가 안 되면 False 를 돌려준다.
     """
     try:
@@ -1068,14 +1074,9 @@ def hangul_from_word(word_dir, out, combined_name):
                 failed.append(name + " (열기 실패)")
                 hwp.Clear(1)
                 continue
-            hwp.Run("SelectAll")
-            ps = hwp.HParameterSet.HParaShape
-            hwp.HAction.GetDefault("ParagraphShape", ps.HSet)
-            ps.LineSpacingType, ps.LineSpacing = 0, 160
-            hwp.HAction.Execute("ParagraphShape", ps.HSet)
-            hwp.Run("Cancel")
             # 작은 표는 글자처럼 취급해야 제목 앞쪽으로 떠서 배치되지 않는다.
             # 큰 표(10cm 넘음)는 글자처럼 취급하면 쪽 사이에서 나뉘지 않아 통째로 다음 쪽으로 밀리므로 그대로 둔다
+            hwp.PageCount  # 쪽 나눔을 한 번 계산시켜야 표 높이가 실제 값으로 나온다
             ctrl = hwp.HeadCtrl
             while ctrl:
                 if ctrl.CtrlID == "tbl":
