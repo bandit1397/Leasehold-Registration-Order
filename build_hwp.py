@@ -17,6 +17,10 @@ from xml.sax.saxutils import escape
 from hwpx import HwpxDocument
 
 MM = 283.465  # 1mm = 283.465 HWPUNIT
+# 쪽 여백(mm): 법원 제출 서류 실무 양식 — 기록을 위쪽에서 철하므로 위 여백을 넓게 둔다
+MARGIN = {"top": 45, "bottom": 30, "left": 20, "right": 20}
+# 법원에 내지 않고 우편으로 보내는 내용증명은 일반 공문서 여백(행정업무규정)
+LETTER_MARGIN = {"top": 30, "bottom": 15, "left": 20, "right": 15}
 FONT_DIR = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
 PLAN_IMAGES = [
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "자료", name)
@@ -208,6 +212,9 @@ class BaseBuilder:
     def keep_last(self):
         """바로 앞 문단을 다음 문단과 같은 쪽에 두게 한다 (Word·한글 출력에서만 의미 있음)."""
 
+    def margins(self, m):
+        """다음 문단부터 쪽 여백을 바꾼다 (Word·한글 출력에서만 의미 있음)."""
+
     def sign(self, who="신청인", name=C["신청인"], date=C["작성일"], court=True):
         # 서명란(날짜·이름·법원)은 한 덩어리로, 앞 문단과 함께 넘어가게 묶는다
         self.keep_last()
@@ -233,8 +240,8 @@ class HwpBuilder(BaseBuilder):
             "small": st.ensure_run(size=10, font="바탕"),
             "note": st.ensure_run(size=10, font="바탕", color="#C00000"),
         }
-        self.d.page.set_margins(left=int(20 * MM), right=int(20 * MM),
-                                top=int(20 * MM), bottom=int(15 * MM))
+        self.d.page.set_margins(left=int(MARGIN["left"] * MM), right=int(MARGIN["right"] * MM),
+                                top=int(MARGIN["top"] * MM), bottom=int(MARGIN["bottom"] * MM))
         self._next_break = False
 
     def _p(self, text, kind, align, indent=0, hang=0, before=0, after=0,
@@ -352,11 +359,11 @@ class PdfBuilder(BaseBuilder):
 
         def page_no(canvas, doc):
             canvas.setFont("Batang", 9)
-            canvas.drawCentredString(A4[0] / 2, 8 * mm, f"- {doc.page} -")
+            canvas.drawCentredString(A4[0] / 2, 15 * mm, f"- {doc.page} -")
 
-        SimpleDocTemplate(path, pagesize=A4, leftMargin=20 * mm,
-                          rightMargin=20 * mm, topMargin=20 * mm,
-                          bottomMargin=15 * mm, title=os.path.basename(path)[:-4],
+        SimpleDocTemplate(path, pagesize=A4, leftMargin=MARGIN["left"] * mm,
+                          rightMargin=MARGIN["right"] * mm, topMargin=MARGIN["top"] * mm,
+                          bottomMargin=MARGIN["bottom"] * mm, title=os.path.basename(path)[:-4],
                           author=C["신청인"]).build(
             self.flow, onFirstPage=page_no, onLaterPages=page_no)
 
@@ -374,8 +381,10 @@ class DocxBuilder(BaseBuilder):
         self.d = Document()
         sec = self.d.sections[0]
         sec.page_width, sec.page_height = Mm(210), Mm(297)
-        sec.left_margin = sec.right_margin = sec.top_margin = Mm(20)
-        sec.bottom_margin = Mm(15)
+        sec.top_margin, sec.bottom_margin = Mm(MARGIN["top"]), Mm(MARGIN["bottom"])
+        sec.left_margin, sec.right_margin = Mm(MARGIN["left"]), Mm(MARGIN["right"])
+        sec.header_distance, sec.footer_distance = Mm(20), Mm(15)
+        self._page_number_footer(sec)
         # Word 가 한글과 숫자 사이에 자동으로 넣는 간격("제 202 호")을 끈다
         from docx.oxml import OxmlElement
         from docx.oxml.ns import qn
@@ -384,6 +393,7 @@ class DocxBuilder(BaseBuilder):
             el = OxmlElement(tag)
             el.set(qn("w:val"), "0")
             ppr.append(el)
+        self._cur_margin, self._want_margin = MARGIN, MARGIN
         self.spec = {  # 크기, 굵게, 색
             "title": (20, True, None), "sub": (14, True, None),
             "head": (12, True, None), "body": (12, False, None),
@@ -391,6 +401,35 @@ class DocxBuilder(BaseBuilder):
         }
         self._next_break = False
         self._first = True
+
+    @staticmethod
+    def _page_number_footer(sec):
+        """쪽 아래 가운데에 「- 쪽번호 -」를 넣는다 (한글로 옮겨도 쪽 번호 필드로 유지됨)."""
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
+        from docx.shared import Pt
+        para = sec.footer.paragraphs[0]
+        para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        def run(text=None, fld=None):
+            r = para.add_run(text or "")
+            r.font.size = Pt(9)
+            r.font.name = "바탕"
+            r._element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:eastAsia"), "바탕")
+            if fld:
+                for kind in ("begin", None, "end"):
+                    if kind is None:
+                        el = OxmlElement("w:instrText")
+                        el.set(qn("xml:space"), "preserve")
+                        el.text = " PAGE "
+                    else:
+                        el = OxmlElement("w:fldChar")
+                        el.set(qn("w:fldCharType"), kind)
+                    r._element.append(el)
+        run("- ")
+        run(fld=True)
+        run(" -")
 
     @staticmethod
     def _runs(para, text, size, bold=False, color=None):
@@ -416,8 +455,27 @@ class DocxBuilder(BaseBuilder):
             if blank:
                 run.font.highlight_color = WD_COLOR_INDEX.YELLOW
 
+    def margins(self, m):
+        self._want_margin = m
+
+    def _apply_margin(self):
+        from docx.enum.section import WD_SECTION
+        from docx.shared import Mm
+        if self._want_margin is self._cur_margin:
+            return
+        if len(self.d.paragraphs) > 0 or len(self.d.tables) > 0:
+            sec = self.d.add_section(WD_SECTION.NEW_PAGE)   # 새 구역 = 새 쪽
+            self._next_break = False
+        else:
+            sec = self.d.sections[-1]
+        m = self._want_margin
+        sec.top_margin, sec.bottom_margin = Mm(m["top"]), Mm(m["bottom"])
+        sec.left_margin, sec.right_margin = Mm(m["left"]), Mm(m["right"])
+        self._cur_margin = m
+
     def _para(self):
         # 새 문서의 첫 문단은 빈 문단을 재사용하지 않고 그대로 추가한다
+        self._apply_margin()
         para = self.d.add_paragraph()
         if self._next_break:
             para.paragraph_format.page_break_before = True
@@ -454,6 +512,7 @@ class DocxBuilder(BaseBuilder):
         from docx.oxml.ns import qn
         from docx.shared import Mm
         weights = weights or [1] * len(rows[0])
+        self._apply_margin()
         t = self.d.add_table(rows=len(rows), cols=len(rows[0]))
         t.style = "Table Grid"
         t.autofit = False
@@ -663,6 +722,7 @@ def doc_supplement(b):
 
 
 def doc_schedule1(b):
+    b.line = 1.4   # 별지 1은 1쪽으로
     b.title("별지 1  부동산 및 임차목적물의 표시")
     b.h("1. 1동의 건물의 표시")
     b.items([
@@ -689,16 +749,16 @@ def doc_schedule1(b):
         f"현장에서는 이 건물을 「{C['건물']}」으로 부름.", indent=4)
     b.p("나. 임대차계약서 및 현장 출입문에는 「제203호」로 표시되어 있으나, 이는 공부상 제2층 제202호 "
         "전유부분 전체와 동일한 공간을 가리키는 현장 호실 표시임. 끝.", indent=4)
-    b.blank()
+    b.line = BaseBuilder.line
 
 
 def doc_schedule2(b):
     b.title("별지 2  임차목적물 위치 표시 도면")
     b.center(f"{C['건물']} 2층 평면도 — 빨간색 실선 내부 전체가 임차목적물")
     b.caption("[사진 1]  공부상 호실 표시")
-    b.picture(PLAN_IMAGES[0], width_mm=128)
+    b.picture(PLAN_IMAGES[0], width_mm=98)
     b.caption("[사진 2]  현재 현장 호실 표시")
-    b.picture(PLAN_IMAGES[1], width_mm=128)
+    b.picture(PLAN_IMAGES[1], width_mm=98)
     b.page_break()
     b.h("1. 공부상 호실과 현장 호실의 대응관계")
     b.table([
@@ -1034,7 +1094,8 @@ def doc_checklist(b):
 
 
 def doc_notice(b):
-    b.line, b.para_after = 1.45, 4   # 내용증명은 1쪽으로 (줄 간격 145%)
+    b.margins(LETTER_MARGIN)          # 우편으로 보내는 서류 — 일반 공문서 여백
+    b.line, b.para_after = 1.35, 3   # 내용증명은 1쪽으로 (줄 간격 135%)
     b.title("내 용 증 명")
     b.table([
         ["수신인", f"{C['피신청인']} (주소: {C['피신청인주소']}, 연락처: {C['피신청인연락처']})"],
@@ -1067,21 +1128,18 @@ def doc_notice(b):
     b._p("", "body", "LEFT", keep=True)
     b.right(f"{C['발송일']}    발신인  {C['신청인']}")
     b.line, b.para_after = BaseBuilder.line, BaseBuilder.para_after  # 합본의 다음 서류는 원래 간격
+    b.margins(MARGIN)
 
 
 def doc_poa(b):
-    b.line, b.para_after = 1.3, 3   # 위임장은 1쪽으로
+    b.line, b.para_after = 1.15, 2   # 위임장은 1쪽으로
     b.title("위  임  장")
     b.sub("(주택임차권등기명령 신청사건)")
     b.table([
-        ["구분", "내용"],
         ["수임인 성명", C["수임인성명"]],
         ["주민등록번호", C["수임인주민번호"]],
         ["주소", C["수임인주소"]],
         ["신청인과의 관계", C["수임인관계"]],
-    ], weights=[30, 70])
-    b.h("사건의 표시")
-    b.table([
         ["사건", "주택임차권등기명령 신청"],
         ["신청인(임차인)", C["신청인"]],
         ["피신청인(임대인)", C["피신청인"]],
@@ -1102,6 +1160,7 @@ def doc_poa(b):
 
 def doc_exhibit_deposit(b):
     """갑 제2호증 — 보증금 이체내역 (이체확인증 두 장을 한 쪽에)."""
+    b.line = 1.3
     b.title(갑("이체내역"))
     b.sub("보증금 이체내역 (모바일뱅킹 이체확인증)")
     rows = [["회", "이체일시", "이체금액", "보내는 분", "받는 분", "입금통장 표시"]]
@@ -1110,17 +1169,19 @@ def doc_exhibit_deposit(b):
     rows.append(["", "합계", f"{C['보증금']}원", "", "", ""])
     b.table(rows, weights=[6, 22, 16, 16, 16, 24])
     b.items([
-        f"가. 보내는 분 {C['보증금송금인']}은 신청인의 모로서, 신청인을 위하여 보증금을 이체하였고 입금통장에는 "
+        f"가. 보내는 분({C['보증금송금인']})은 신청인의 모로서, 신청인을 위하여 보증금을 이체하였고 입금통장에는 "
         f"「{C['신청인']}」으로 표시되었다.",
-        f"나. 받는 분 {C['피신청인']}은 피신청인(임대인) 본인이다.",
+        f"나. 받는 분({C['피신청인']})은 피신청인(임대인) 본인이다.",
         f"다. 두 건의 합계 {C['보증금']}원은 임대차계약서(갑 제1호증)의 보증금과 같다.",
     ], indent=0)
-    b.picture(DEPOSIT_IMAGE, width_mm=160)
+    b.picture(DEPOSIT_IMAGE, width_mm=140)
     b.small("※ 위 이체확인증은 출금 은행(우체국) 모바일뱅킹에서 2026. 11. 3. 출력한 것임.")
+    b.line = BaseBuilder.line
 
 
 def doc_exhibit_rent(b):
     """갑 제5호증 — 차임·관리비 납부내역 (이체확인증 세 장을 한 쪽에)."""
+    b.line, b.para_after = 1.3, 3
     b.title(갑("미납내역"))
     b.sub("차임·관리비 납부내역 (모바일뱅킹 이체확인증)")
     b.table([["회", "이체일시", "이체금액", "해당분", "받는 분"]]
@@ -1135,22 +1196,23 @@ def doc_exhibit_rent(b):
         "(320,000원 × 3)으로 한꺼번에 지급하였다.",
         f"다. 7월분부터 10월분까지(2026. 7. 23. ~ 10. 23. 지급분)는 지급하지 못하였다 — 차임 {C['연체차임']}원, "
         f"관리비 {C['연체관리비']}원, 합계 {C['연체합계']}원.",
-        f"라. 보내는 분 {C['보증금송금인']}은 신청인의 모로서 신청인을 위하여 이체하였고(입금통장 표시 "
-        f"「{C['신청인']}」), 받는 분 {C['피신청인']}은 피신청인 본인이다.",
+        f"라. 보내는 분({C['보증금송금인']})은 신청인의 모로서 신청인을 위하여 이체하였고(입금통장 표시 "
+        f"「{C['신청인']}」), 받는 분({C['피신청인']})은 피신청인 본인이다.",
     ], indent=0)
-    b.picture(RENT_IMAGE, width_mm=170)
+    b.picture(RENT_IMAGE, width_mm=138)
     b.small("※ 위 이체확인증은 출금 은행(우체국) 모바일뱅킹에서 2026. 11. 3. 출력한 것임.")
+    b.line, b.para_after = BaseBuilder.line, BaseBuilder.para_after
 
 
 def doc_exhibit_photos(b):
     """갑 제8호증 — 현장 사진 (사진 목록 + 한 쪽에 두 장씩)."""
     from PIL import Image
+    b.line, b.para_after = 1.3, 3   # 1쪽(목록·설명)이 한 쪽에 들어가게
     b.title(갑("사진"))
     b.sub("현장 사진 (출입문·내부·계량기)")
     b.table([
         ["촬영일", "2026. 11. 3."],
-        ["촬영 장소", f"{C['소재지']} — 현장 2층 출입문 「제203호」(공부상 제2층 제202호)와 건물 외부"],
-        ["사진 순서", "건물 바깥 → 2층 복도 → 출입문 → 내부(양방향) → 주방 → 현관·화장실"],
+        ["촬영 장소", "현장 2층 출입문 「제203호」(공부상 제2층 제202호) 및 건물 외부"],
     ], weights=[20, 80], header=False)
     b.h("사진 목록")
     b.table([["사진", "시각", "촬영 위치·방향", "확인되는 사항"]]
@@ -1160,21 +1222,20 @@ def doc_exhibit_photos(b):
     b.items([
         "가. 사진 1~3 — 이 세대의 계량기와 출입문은 「203호」로 표시되어 있고, 2층 복도에는 현장 201·202·203호가 "
         "차례로 있다(별지 2 사진 2와 같음).",
-        "나. 사진 4·5 — 현관에서 창까지 양쪽 방향 어디에도 내부를 나누는 벽이 없는 하나의 공간이며, 창 쪽은 "
-        "확장된 발코니로 원룸과 이어져 있다.",
-        "다. 사진 6·7 — 주방, 현관, 화장실이 이 공간 안에 있어 별지 2의 구성(확장된 발코니, 원룸(주방 포함), "
-        "현관, 욕실)과 같다.",
-        "라. 사진 4 — 침구·생활용품 등 신청인이 현재 거주하고 있는 모습이다.",
+        "나. 사진 4·5 — 현관에서 창까지 내부를 나누는 벽이 없는 하나의 공간이며, 창 쪽은 확장된 발코니로 "
+        "원룸과 이어져 있다. 침구·생활용품 등 신청인이 거주하는 모습도 보인다.",
+        "다. 사진 6·7 — 주방·현관·화장실이 이 공간 안에 있어 별지 2의 구성과 같다.",
     ], indent=0)
     for i, (fname, t, where, what) in enumerate(SITE_PHOTOS, 1):
         path = os.path.join(EVIDENCE_DIR, fname)
         if i % 2 == 1:
             b.page_break()
         w, h = Image.open(path).size
-        width = min(150, 100 * w / h)          # 한 쪽에 두 장: 사진 높이 약 100mm 이내
+        width = min(130, 78 * w / h)           # 한 쪽에 두 장: 사진 높이 약 78mm 이내 (위 여백 45mm 기준)
         b._p(f"사진 {i}.  {where}", "head", "CENTER", before=4 if i % 2 else 14, after=2, keep=True)
         b.picture(path, width_mm=width)
         b._p(f"▶ {what}   (2026. 11. 3. {t} 촬영)", "small", "CENTER", before=2, after=4)
+    b.line, b.para_after = BaseBuilder.line, BaseBuilder.para_after
 
 
 def doc_poa_auction(b):
@@ -1277,9 +1338,9 @@ def doc_auction_correction(b):
     b.page_break()
     b.title("별지  2층 평면도 비교 사진")
     b.caption("[사진 1]  공부상 호실 표시")
-    b.picture(PLAN_IMAGES[0], width_mm=112)
+    b.picture(PLAN_IMAGES[0], width_mm=86)
     b.caption("[사진 2]  현재 현장 호실 표시")
-    b.picture(PLAN_IMAGES[1], width_mm=112)
+    b.picture(PLAN_IMAGES[1], width_mm=86)
     b.small("빨간색 실선: 제출인 점유 부분(공부상 202호 전유부분 전체 = 현장 203호) / "
             "파란색 실선: 다른 호실 / 주황색 선: 현장에서 나누어 사용하는 경계. "
             "사진 1의 호실 번호는 도면에 인쇄된 호실 표기(201호~501호, 202호~502호, 203호~503호, "
