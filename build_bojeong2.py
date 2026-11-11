@@ -27,8 +27,93 @@ B = {
 }
 
 NAME = "01_보정서_임차범위_정정"
+HERE = os.path.dirname(os.path.abspath(__file__))
+PLAN_SRC = os.path.join(HERE, "자료", "별지2_사진1_공부상호실.jpg")
+ZOOM_IMAGE = os.path.join(HERE, "자료", "별지2_사진3_202호확대.jpg")
+# 별지2 사진 1(2400×1893)에서 공부상 202호(빨간 실선)와 오른쪽 치수선만 잘라 낸다
+ZOOM_BOX = (1422, 470, 2110, 975)
+
+
+def make_zoom_image():
+    """공부상 202호 부분만 2.5배 확대하고, 위에 「공부상 202호 = 계약상 203호」 제목 띠를 붙인다."""
+    from PIL import Image, ImageDraw, ImageFont
+    fonts = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
+    big = ImageFont.truetype(os.path.join(fonts, "malgunbd.ttf"), 72)
+    mid = ImageFont.truetype(os.path.join(fonts, "malgunbd.ttf"), 52)
+    small = ImageFont.truetype(os.path.join(fonts, "malgun.ttf"), 40)
+    crop = Image.open(PLAN_SRC).convert("RGB").crop(ZOOM_BOX)
+    k = 2.5
+    crop = crop.resize((int(crop.width * k), int(crop.height * k)), Image.LANCZOS)
+    red, black = (210, 0, 0), (0, 0, 0)
+
+    # 도면 안의 빈 곳(빨간 실선 오른쪽)에 「= 계약상 나동 제203호」 표시
+    d = ImageDraw.Draw(crop)
+    x0, y0 = int(330 * k), int(115 * k)
+    lines = [("＝ 임대차계약서상", mid), ("나동 제203호", big), ("(현장 출입문 표시)", small)]
+    w = max(d.textlength(t, font=f) for t, f in lines) + 60
+    h = sum(f.size + 22 for _, f in lines) + 40
+    d.rectangle((x0, y0, x0 + w, y0 + h), fill="white", outline=red, width=8)
+    y = y0 + 25
+    for t, f in lines:
+        d.text((x0 + 30, y), t, font=f, fill=red if f is not small else black)
+        y += f.size + 22
+    # 표시 상자에서 빨간 실선 쪽으로 화살표
+    ax, ay = x0, y0 + h // 2
+    tx = int(300 * k)
+    d.line((ax, ay, tx, ay), fill=red, width=10)
+    d.polygon([(tx, ay), (tx + 45, ay - 25), (tx + 45, ay + 25)], fill=red)
+
+    # 흐린 도면 치수 숫자 위에 같은 숫자를 크게 덮어 쓴다 (파란 굵은 글씨, 흰 바탕).
+    # 좌표는 잘라 낸 그림(ZOOM_BOX) 기준 원래 숫자의 가운데. 5,700은 2,500과 겹치지 않게 같은 치수선 위에서 아래로 내림
+    # 숫자 상자가 원래 숫자(세로 글씨 포함)를 통째로 덮도록, 상자 위·아래 끝(y1, y2)을 원래 글씨 범위에 맞춘다.
+    # (숫자, 상자 가운데 x, 원래 글씨 위 끝 y1, 아래 끝 y2) — 잘라 낸 그림 기준 좌표
+    dims = [("1,200", 586, 50, 106), ("2,500", 580, 183, 242), ("2,000", 600, 346, 404),
+            ("5,700", 653, 213, 267), ("2,100", 82, 226, 258), ("1,500", 215, 226, 258)]
+    num = ImageFont.truetype(os.path.join(fonts, "arialbd.ttf"), 60)
+    blue = (0, 60, 200)
+    for text, cx, y1, y2 in dims:
+        tw = d.textlength(text, font=num)
+        top, bottom = y1 * k, y2 * k
+        d.rectangle((cx * k - tw / 2 - 10, top, cx * k + tw / 2 + 10, bottom),
+                    fill="white", outline=blue, width=5)
+        d.text((cx * k - tw / 2, (top + bottom) / 2 - 36), text, font=num, fill=blue)
+
+    # 위쪽 제목 띠
+    band = 230
+    out = Image.new("RGB", (crop.width, crop.height + band), "white")
+    out.paste(crop, (0, band))
+    d = ImageDraw.Draw(out)
+    t1 = "공부상 제2층 제202호  ＝  계약상 나동 제203호"
+    t2 = "완전히 동일한 하나의 주택 (빨간색 실선 내부 전체)"
+    d.text(((out.width - d.textlength(t1, font=big)) / 2, 25), t1, font=big, fill=red)
+    d.text(((out.width - d.textlength(t2, font=mid)) / 2, 130), t2, font=mid, fill=black)
+    d.rectangle((0, 0, out.width - 1, out.height - 1), outline=black, width=4)
+    out.save(ZOOM_IMAGE, quality=92)
+
+
+def doc_zoom(b):
+    """임차목적물(공부상 202호) 확대 도면 + 설명란."""
+    same = f"공부상 {C['건물']} 제2층 제202호 전유부분 전체"
+    b.title("임차목적물 확대 도면")
+    b.center(f"**(공부상) {C['건물']} 제2층 제202호 ＝ (계약상) 나동 제203호**")
+    b.picture(ZOOM_IMAGE, width_mm=112)
+    b.h("설 명 란")
+    b.table([
+        ["구분", "내용"],
+        ["공부상 표시", f"**제2층 제202호 전유부분 전체 (전유면적 12.37㎡)**"],
+        ["계약상 표시", "**나동 제203호** (임대차계약서 · 현장 출입문 · 주민등록)"],
+        ["두 표시의 관계", "**완전히 동일한 하나의 주택** — 나누지 않은 전체를 신청인이 단독 점유"],
+        ["임차범위", f"{C['임차범위']}\n= 빨간색 실선 내부 전체 (확장형 발코니 · 원룸(주방) · 현관 · 욕실)"],
+        ["도면 표기 치수", "가로 3,600 × 깊이 1,200 + 2,500 + 2,000mm (위치·경계 설명용, 면적은 대장의 12.37㎡ 기준)"],
+        ["도면 출처", f"원주시 발급 건축물현황도({C['현황도발급일']}) 2층 평면도 중 원룸형 \"A\"(202호~502호) 부분 확대"],
+    ], weights=[22, 78])
+    b.note("※ 빨간색 실선·붉은 글씨·위쪽 제목은 신청인이 설명을 위해 덧붙인 것이고, 파란 상자의 숫자는 그 자리에 "
+           "인쇄된 도면 치수(단위 mm)를 읽기 쉽게 크게 다시 쓴 것임. 나머지는 건축물현황도 그대로임.")
+
+
 SCHEDULES = [("02_별지1_부동산및임차목적물의표시_정정", doc_schedule1),
-             ("03_별지2_위치표시도면_정정", doc_schedule2)]
+             ("03_별지2_위치표시도면_정정", doc_schedule2),
+             ("04_임차목적물_확대도면_공부상202호_계약상203호", doc_zoom)]
 
 
 def doc_bojeong2(b):
@@ -109,6 +194,8 @@ def doc_bojeong2(b):
     b.p("별지 1(부동산 및 임차목적물의 표시)의 4항 임차범위를 위 1항과 같이 고치고 계약서의 면적 기준을 "
         "비고에 적었으며, 별지 2(임차목적물 위치 표시 도면)에도 같은 임차범위와 계약서상 표시를 적은 "
         "정정본을 제출합니다. 종전 별지 1·2는 이 정정본으로 갈음합니다.")
+    b.p("아울러 공부상 제202호 부분만 확대하고 설명란에 **「공부상 제2층 제202호 ＝ 계약상 나동 제203호」**를 "
+        "적은 **임차목적물 확대 도면**을 함께 제출합니다.")
 
     # ---- 5. 결론 ----
     b.h("5. 결론")
@@ -118,7 +205,8 @@ def doc_bojeong2(b):
 
     b.h("첨 부 서 류")
     b.items(["1. 별지 1  부동산 및 임차목적물의 표시(정정)    1통",
-             "2. 별지 2  임차목적물 위치 표시 도면(정정)    1통"], indent=4)
+             "2. 별지 2  임차목적물 위치 표시 도면(정정)    1통",
+             "3. 임차목적물 확대 도면(공부상 제202호 ＝ 계약상 나동 제203호)    1통"], indent=4)
     b.keep_last()
     b._p(B["작성일"], "body", "CENTER", before=18, keep=True)
     b._p(f"신청인{sp*2}{C['신청인']}{sp*4}(인)", "body", "RIGHT", before=12, keep=True)
@@ -128,8 +216,8 @@ def doc_bojeong2(b):
 def main():
     V.update(VARIANTS[0][1])          # 제출용 증거 번호(사실확인서 없음)
     C["작성일"] = B["작성일"]          # 정정 별지 2의 작성일
-    here = os.path.dirname(os.path.abspath(__file__))
-    out = os.path.join(here, "서류", "보정서_임차범위")
+    make_zoom_image()
+    out = os.path.join(HERE, "서류", "보정서_임차범위")
     pdf_out, word_out = os.path.join(out, "PDF"), os.path.join(out, "Word")
     os.makedirs(pdf_out, exist_ok=True)
     os.makedirs(word_out, exist_ok=True)
