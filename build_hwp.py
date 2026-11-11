@@ -174,8 +174,23 @@ def image_size(path):
     return ImageReader(path).getSize()
 
 
+BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def bold_pieces(text):
+    """「**굵게**」 표시를 (글자, 굵게 여부) 조각으로 나눈다. 표시가 없으면 한 조각."""
+    pieces, pos = [], 0
+    for m in BOLD_RE.finditer(text):
+        pieces += [(text[pos:m.start()], False), (m.group(1), True)]
+        pos = m.end()
+    pieces.append((text[pos:], False))
+    return [(t, b) for t, b in pieces if t]
+
+
 class BaseBuilder:
-    """서류 본문 함수(doc_*)가 쓰는 공통 인터페이스. 출력 형식은 하위 클래스가 정한다."""
+    """서류 본문 함수(doc_*)가 쓰는 공통 인터페이스. 출력 형식은 하위 클래스가 정한다.
+
+    문장 안의 「**…**」는 그 부분만 굵게 출력한다 (PDF·Word·한글 모두)."""
 
     line = 1.6        # 본문 줄 간격 (Word 배수 = 한글 %, 1.6 → 160%)
     para_after = 6    # 문단 뒤 간격(pt)
@@ -245,6 +260,9 @@ class HwpBuilder(BaseBuilder):
             "body": st.ensure_run(size=12, font="바탕"),
             "small": st.ensure_run(size=10, font="바탕"),
             "note": st.ensure_run(size=10, font="바탕", color="#C00000"),
+            "body_b": st.ensure_run(bold=True, size=12, font="바탕"),
+            "cell": st.ensure_run(size=10.5, font="바탕"),
+            "cell_b": st.ensure_run(bold=True, size=10.5, font="바탕"),
         }
         self.d.page.set_margins(left=int(MARGIN["left"] * MM), right=int(MARGIN["right"] * MM),
                                 top=int(MARGIN["top"] * MM), bottom=int(MARGIN["bottom"] * MM))
@@ -252,7 +270,13 @@ class HwpBuilder(BaseBuilder):
 
     def _p(self, text, kind, align, indent=0, hang=0, before=0, after=0,
            keep=False):
-        para = self.d.add_paragraph(text, char_pr_id_ref=self.chars[kind])
+        if "**" in text:
+            para = self.d.add_paragraph("", char_pr_id_ref=self.chars[kind], include_run=False)
+            for chunk, bold in bold_pieces(text):
+                ref = self.chars["body_b"] if bold and kind == "body" else self.chars[kind]
+                para.add_run(chunk, char_pr_id_ref=ref)
+        else:
+            para = self.d.add_paragraph(text, char_pr_id_ref=self.chars[kind])
         fmt = dict(alignment=align, line_spacing_percent=160,
                    indent_left_mm=indent, first_line_indent_mm=hang,
                    spacing_before_pt=before, spacing_after_pt=after)
@@ -272,7 +296,15 @@ class HwpBuilder(BaseBuilder):
             t.set_column_widths(weights)
         for r, row in enumerate(rows):
             for c, val in enumerate(row):
-                t.set_cell_text(r, c, val)
+                if "**" in val:
+                    cell = t.cell(r, c)
+                    cell.set_text("")
+                    for i, line in enumerate(val.split("\n")):
+                        para = cell.paragraphs[0] if i == 0 else cell.add_paragraph("")
+                        for chunk, bold in bold_pieces(line):
+                            para.add_run(chunk, char_pr_id_ref=self.chars["cell_b" if bold else "cell"])
+                else:
+                    t.set_cell_text(r, c, val)
                 if header and r == 0:
                     t.set_cell_shading(r, c, "#E7E6E6")
 
@@ -327,7 +359,12 @@ class PdfBuilder(BaseBuilder):
                            leftIndent=indent * mm, firstLineIndent=hang * mm,
                            spaceBefore=before, spaceAfter=after,
                            keepWithNext=keep)
-        self.flow.append(Paragraph(escape(text) or "&nbsp;", style))
+        self.flow.append(Paragraph(self._markup(text) or "&nbsp;", style))
+
+    @staticmethod
+    def _markup(text):
+        # 바탕에는 굵은꼴이 없으므로 굵게 표시한 부분은 맑은 고딕 굵게로 쓴다
+        return BOLD_RE.sub(r'<font name="MalgunBd">\1</font>', escape(text))
 
     def page_break(self):
         from reportlab.platypus import PageBreak
@@ -339,7 +376,7 @@ class PdfBuilder(BaseBuilder):
         from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
         weights = weights or [1] * len(rows[0])
         widths = [170 * mm * w / sum(weights) for w in weights]
-        data = [[Paragraph(escape(v).replace("\n", "<br/>") or "&nbsp;", self.cell)
+        data = [[Paragraph(self._markup(v).replace("\n", "<br/>") or "&nbsp;", self.cell)
                  for v in row] for row in rows]
         t = Table(data, colWidths=widths, repeatRows=1 if header else 0)
         cmds = [("GRID", (0, 0), (-1, -1), 0.5, black),
@@ -442,18 +479,19 @@ class DocxBuilder(BaseBuilder):
         from docx.enum.text import WD_COLOR_INDEX
         from docx.oxml.ns import qn
         from docx.shared import Pt, RGBColor
-        pos = 0
         pieces = []
-        for m in BLANK_RE.finditer(text):
-            pieces += [(text[pos:m.start()], False), (m.group(), True)]
-            pos = m.end()
-        pieces.append((text[pos:], False))
-        for chunk, blank in pieces:
+        for part, strong in bold_pieces(text):
+            pos = 0
+            for m in BLANK_RE.finditer(part):
+                pieces += [(part[pos:m.start()], False, strong), (m.group(), True, strong)]
+                pos = m.end()
+            pieces.append((part[pos:], False, strong))
+        for chunk, blank, strong in pieces:
             if not chunk:
                 continue
             run = para.add_run(chunk)
             run.font.size = Pt(size)
-            run.font.bold = bold
+            run.font.bold = bold or strong
             run.font.name = "바탕"
             run._element.rPr.rFonts.set(qn("w:eastAsia"), "바탕")
             if color:
@@ -750,14 +788,14 @@ def doc_schedule1(b):
         f"대지권의 비율 : {C['대지권비율']}",
     ])
     b.h("4. 임차목적물(임차범위)")
-    b.p(f"위 {C['임차범위']}", indent=4)
+    b.p(f"**위 {C['임차범위']}**", indent=4)
     b.h("5. 비고")
     b.p(f"가. 위 1~3항은 등기사항전부증명서의 기재대로 적음(등기부에는 건물명칭과 동 표시가 없음). "
         f"현장에서는 이 건물을 「{C['건물']}」으로 부름.", indent=4)
-    b.p("나. 임대차계약서 및 현장 출입문에는 「제203호」로 표시되어 있으나, 이는 공부상 제2층 제202호 "
-        "전유부분 전체와 동일한 공간을 가리키는 현장 호실 표시임.", indent=4)
+    b.p("나. 임대차계약서 및 현장 출입문에는 「제203호」로 표시되어 있으나, 이는 **공부상 제2층 제202호 "
+        "전유부분 전체와 완전히 동일한 주택**을 가리키는 현장 호실 표시임.", indent=4)
     b.p("다. 임대차계약서는 면적을 「공부상 전용면적 또는 연면적(실측면적)」에 따르도록 정하고 있으므로, "
-        "임차범위의 면적은 공부상 제2층 제202호의 전유면적 12.37㎡임. 공부상 제2층 제203호"
+        "임차범위의 면적은 **공부상 제2층 제202호의 전유면적 12.37㎡**임. 공부상 제2층 제203호"
         "(전유면적 31.41㎡)는 임차목적물이 아님. 끝.", indent=4)
     b.line = BaseBuilder.line
 
@@ -793,7 +831,7 @@ def doc_schedule2(b):
     b.h("2. 임차목적물의 특정")
     b.table([
         ["구분", "내용"],
-        ["임차목적물", f"공부상 {C['건물']} 제2층 제202호 전유부분 전체"],
+        ["임차목적물", f"**공부상 {C['건물']} 제2층 제202호 전유부분 전체**"],
         ["공부상 전유면적", "12.37㎡ (집합건축물대장)"],
         ["현장 출입문 표시", "제203호"],
         ["임대차계약서상 표시", "나동 제203호 (면적은 「공부상 전용면적 또는 연면적(실측면적)」에 따름)"],
@@ -820,13 +858,13 @@ def doc_schedule2(b):
         "기재된 12.37㎡를 기준으로 함.")
     b.h("4. 임차목적물의 동일성")
     b._p(f"신청인 {C['신청인']}이 {C['전입일']} 인도받아 현재까지 점유하고 있는 현장 출입문 표시 제203호는 "
-         f"공부상 {C['건물']} 제2층 제202호 전유부분 전체에 해당함.", "body", "JUSTIFY", after=6)
+         f"**공부상 {C['건물']} 제2층 제202호 전유부분 전체**에 해당함.", "body", "JUSTIFY", after=6)
     b._p("공부상 제202호는 현장에서 2개 이상의 호실로 분할되지 않았으며, 현장 제203호와 위치 및 외곽 경계가 "
          "일치하는 하나의 독립된 주택으로서 신청인이 그 전유부분 전체를 단독으로 점유하고 있음.",
          "body", "JUSTIFY", after=6)
     # 마지막 문단과 작성일·작성자가 서로 다른 쪽으로 갈라지지 않게 묶는다
     b._p("따라서 임대차계약서 및 주민등록에 기재된 「제203호」는 공부상 제202호와 별개의 주택을 가리키는 것이 "
-         "아니라, 공부상 제202호에 해당하는 주택의 현장 호실 표시임을 소명함.", "body", "JUSTIFY", keep=True)
+         "아니라, **공부상 제202호와 완전히 동일한 주택**의 현장 호실 표시임을 소명함.", "body", "JUSTIFY", keep=True)
     b._p("", "body", "LEFT", keep=True)
     b._p(f"작성일 : {C['작성일']}", "body", "LEFT", keep=True)
     b._p(f"작성자 : 신청인 {C['신청인']}", "body", "LEFT")
