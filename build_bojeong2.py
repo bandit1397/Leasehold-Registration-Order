@@ -104,6 +104,34 @@ def make_zoom_image():
     out.save(ZOOM_IMAGE, quality=92)
 
 
+PLAN2_SRC = os.path.join(HERE, "자료", "별지2_사진2_현재호실.jpg")
+PLAN2_MARKED = os.path.join(HERE, "자료", "별지2_사진2_현재호실_공부상표시.jpg")
+# 사진 2(1956×1465) 위에 붙일 공부상 호실 표시: (글자, 가운데 x, 가운데 y, 색)
+PLAN2_MARKS = [("＝ 공부상 202호", 1245, 335, (210, 0, 0)),     # 빨간 테두리 바로 위 (경계선을 가리지 않게)
+               ("공부상 203호", 738, 1028, (0, 60, 200))]
+
+
+def make_plan2_marked():
+    """정정 별지 2의 사진 2에 「현장 203호 = 공부상 202호」, 「현장 206·207호 = 공부상 203호」를 표시한다.
+    원본(경매 소명서 등에도 쓰임)은 그대로 두고 별도 파일로 만든다."""
+    from PIL import Image, ImageDraw, ImageFont
+    fonts = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
+    font = ImageFont.truetype(os.path.join(fonts, "malgunbd.ttf"), 46)
+    im = Image.open(PLAN2_SRC).convert("RGB")
+    d = ImageDraw.Draw(im)
+    lh = 54                                                   # 줄 높이
+    for text, cx, cy, color in PLAN2_MARKS:
+        lines = text.split("\n")
+        w = max(d.textlength(t, font=font) for t in lines)
+        h = lh * len(lines)
+        d.rectangle((cx - w / 2 - 12, cy - h / 2 - 6, cx + w / 2 + 12, cy + h / 2 + 6),
+                    fill="white", outline=color, width=5)
+        for i, t in enumerate(lines):
+            tw = d.textlength(t, font=font)
+            d.text((cx - tw / 2, cy - h / 2 + i * lh - 4), t, font=font, fill=color)
+    im.save(PLAN2_MARKED, quality=92)
+
+
 def doc_zoom(b):
     """임차목적물(공부상 202호) 확대 도면 + 설명란."""
     same = f"공부상 {C['건물']} 제2층 제202호 전유부분 전체"
@@ -442,6 +470,10 @@ def main():
     V.update(VARIANTS[0][1])          # 제출용 증거 번호(사실확인서 없음)
     C["작성일"] = B["작성일"]          # 정정 별지 2의 작성일
     make_zoom_image()
+    # 정정 별지 2의 사진 2만 공부상 호실 표시가 붙은 그림으로 바꾼다 (원본은 경매 소명서 등에 그대로 쓰임)
+    make_plan2_marked()
+    import build_hwp
+    build_hwp.PLAN_IMAGES[1] = PLAN2_MARKED
     out = os.path.join(HERE, "서류", "보정서_임차범위")
     pdf_out, word_out = os.path.join(out, "PDF"), os.path.join(out, "Word")
     os.makedirs(pdf_out, exist_ok=True)
