@@ -79,6 +79,18 @@ def make_zoom_image():
                     fill="white", outline=blue, width=5)
         d.text((cx * k - tw / 2, (top + bottom) / 2 - 36), text, font=num, fill=blue)
 
+    # 1,200 치수가 확장형 발코니의 깊이임을 숫자 상자 왼쪽 빈 곳에 표시 (파란 글씨, 흰 바탕, 화살표)
+    lab = "확장형 발코니 깊이"
+    lw = d.textlength(lab, font=mid)
+    bx1 = 586 * k - d.textlength("1,200", font=num) / 2 - 10    # 1,200 상자 왼쪽 끝
+    lx2 = bx1 - 70                                               # 글씨 상자 오른쪽 끝 (화살표 자리 남김)
+    ly1, ly2 = 50 * k + 20, 106 * k - 20
+    d.rectangle((lx2 - lw - 30, ly1, lx2, ly2), fill="white", outline=blue, width=5)
+    d.text((lx2 - lw - 15, (ly1 + ly2) / 2 - 32), lab, font=mid, fill=blue)
+    ay = (ly1 + ly2) / 2
+    d.line((lx2, ay, bx1 - 22, ay), fill=blue, width=8)
+    d.polygon([(bx1 - 4, ay), (bx1 - 34, ay - 18), (bx1 - 34, ay + 18)], fill=blue)
+
     # 위쪽 제목 띠
     band = 230
     out = Image.new("RGB", (crop.width, crop.height + band), "white")
@@ -97,7 +109,7 @@ def doc_zoom(b):
     same = f"공부상 {C['건물']} 제2층 제202호 전유부분 전체"
     b.title("임차목적물 확대 도면")
     b.center(f"**(공부상) {C['건물']} 제2층 제202호 ＝ (계약상) 나동 제203호**")
-    b.picture(ZOOM_IMAGE, width_mm=90)
+    b.picture(ZOOM_IMAGE, width_mm=86)
     b.h("설 명 란")
     b.table([
         ["구분", "내용"],
@@ -112,8 +124,9 @@ def doc_zoom(b):
         ["도면 출처 · 치수", f"원주시 발급 건축물현황도({C['현황도발급일']}) 2층 평면도 중 원룸형 \"A\" 부분 확대 / "
                           "가로 3,600 × 깊이 1,200 + 2,500 + 2,000mm (위치·경계 설명용, 면적은 대장의 12.37㎡ 기준)"],
     ], weights=[22, 78])
-    b.note("※ 빨간색 실선·붉은 글씨·위쪽 제목은 신청인이 설명을 위해 덧붙인 것이고, 파란 상자의 숫자는 그 자리에 "
-           "인쇄된 도면 치수(단위 mm)를 읽기 쉽게 크게 다시 쓴 것임. 나머지는 건축물현황도 그대로임.")
+    b.note("※ 빨간색 실선·붉은 글씨·위쪽 제목과 「확장형 발코니 깊이」 표시는 신청인이 설명을 위해 덧붙인 것이고, "
+           "파란 상자의 숫자는 그 자리에 인쇄된 도면 치수(단위 mm)를 읽기 쉽게 크게 다시 쓴 것임. 나머지는 "
+           "건축물현황도 그대로임.")
 
 
 SCHEDULES = [("02_별지1_부동산및임차목적물의표시_정정", doc_schedule1),
