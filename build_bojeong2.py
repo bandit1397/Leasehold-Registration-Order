@@ -111,15 +111,43 @@ PLAN2_MARKS = [("＝ 공부상 202호", 1245, 335, (210, 0, 0)),     # 빨간 �
                ("공부상 201호", 942, 624, (0, 60, 200)),        # 현장 201·202호 사이 아래쪽
                ("공부상 203호", 738, 1028, (0, 60, 200)),       # 현장 207·206호 사이
                ("공부상 204호", 1158, 1028, (0, 60, 200))]      # 현장 205·204호 사이
+PLAN2_RED_TEXT_BOX = (1165, 488, 1338, 562)   # 사진 2의 빨간 「203호」 글씨 (빨간 테두리 안쪽 부분)
+
+
+def thicken_borders(im, grow=7):
+    """사진에 그려진 색 테두리(빨강·하늘색·주황)만 골라 굵고 선명한 색으로 다시 칠한다.
+    호실 번호 글씨는 굵게 하지 않는다 — 진한 파랑 글씨는 색(H)으로 걸러 내고,
+    빨간 「203호」 글씨는 그 자리(PLAN2_RED_TEXT_BOX)를 원본 그대로 되살린다."""
+    import numpy as np
+    from PIL import Image, ImageFilter
+    src = np.array(im.convert("RGB"))
+    hsv = np.array(im.convert("HSV")).astype(int)
+    H, S, V = hsv[..., 0], hsv[..., 1], hsv[..., 2]
+    sat = (S > 110) & (V > 120)
+    masks = {
+        "red": sat & ((H >= 238) | (H <= 8)),
+        "sky": sat & (H >= 132) & (H <= 148),      # 테두리 하늘색(H≈140). 글씨 파랑은 H≈156
+        "orange": sat & (H >= 12) & (H <= 24),
+    }
+    x1, y1, x2, y2 = PLAN2_RED_TEXT_BOX
+    masks["red"][y1:y2, x1:x2] = False             # 글씨는 테두리로 보지 않음
+
+    out = src.copy()
+    colors = {"sky": (0, 140, 235), "orange": (255, 110, 0), "red": (225, 0, 0)}
+    for key in ("sky", "orange", "red"):            # 빨강을 맨 나중에 칠해 임차목적물 경계가 위에 오게 함
+        m = Image.fromarray((masks[key] * 255).astype("uint8")).filter(ImageFilter.MaxFilter(grow))
+        out[np.array(m) > 127] = colors[key]
+    out[y1:y2, x1:x2] = src[y1:y2, x1:x2]           # 「203호」 글씨 자리는 원본 그대로
+    return Image.fromarray(out)
 
 
 def make_plan2_marked():
-    """정정 별지 2의 사진 2에 「현장 203호 = 공부상 202호」, 「현장 206·207호 = 공부상 203호」를 표시한다.
+    """정정 별지 2의 사진 2: 색 테두리를 굵고 선명하게 하고, 현장 호실마다 공부상 호실을 표시한다.
     원본(경매 소명서 등에도 쓰임)은 그대로 두고 별도 파일로 만든다."""
     from PIL import Image, ImageDraw, ImageFont
     fonts = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
     font = ImageFont.truetype(os.path.join(fonts, "malgunbd.ttf"), 46)
-    im = Image.open(PLAN2_SRC).convert("RGB")
+    im = thicken_borders(Image.open(PLAN2_SRC).convert("RGB"))
     d = ImageDraw.Draw(im)
     lh = 54                                                   # 줄 높이
     for text, cx, cy, color in PLAN2_MARKS:
