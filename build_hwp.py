@@ -866,8 +866,8 @@ def doc_schedule2(b):
     b._p("따라서 임대차계약서 및 주민등록에 기재된 「제203호」는 공부상 제202호와 별개의 주택을 가리키는 것이 "
          "아니라, **공부상 제202호와 완전히 동일한 주택**의 현장 호실 표시임을 소명함.", "body", "JUSTIFY", keep=True)
     b._p("", "body", "LEFT", keep=True)
-    b._p(f"작성일 : {C['작성일']}", "body", "LEFT", keep=True)
-    b._p(f"작성자 : 신청인 {C['신청인']}", "body", "LEFT")
+    b._p(f"작성일 : {C['작성일']}", "body", "CENTER", keep=True)
+    b._p(f"작성자 : 신청인 {C['신청인']}", "body", "RIGHT")
 
 
 def doc_settlement(b):
