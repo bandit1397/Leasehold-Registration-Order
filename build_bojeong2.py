@@ -112,12 +112,15 @@ PLAN2_MARKS = [("＝ 공부상 202호", 1245, 335, (210, 0, 0)),     # 빨간 �
                ("공부상 203호", 738, 1028, (0, 60, 200)),       # 현장 207·206호 사이
                ("공부상 204호", 1158, 1028, (0, 60, 200))]      # 현장 205·204호 사이
 PLAN2_RED_TEXT_BOX = (1165, 488, 1338, 562)   # 사진 2의 빨간 「203호」 글씨 (빨간 테두리 안쪽 부분)
+PLAN1_SRC = os.path.join(HERE, "자료", "별지2_사진1_공부상호실.jpg")
+PLAN1_MARKED = os.path.join(HERE, "자료", "별지2_사진1_공부상호실_굵은선.jpg")
+PLAN1_RED_TEXT_BOX = (1450, 558, 1682, 634)   # 사진 1(2400×1893)의 빨간 「202호」 글씨
 
 
-def thicken_borders(im, grow=7):
+def thicken_borders(im, text_box, grow=7):
     """사진에 그려진 색 테두리(빨강·하늘색·주황)만 골라 굵고 선명한 색으로 다시 칠한다.
     호실 번호 글씨는 굵게 하지 않는다 — 진한 파랑 글씨는 색(H)으로 걸러 내고,
-    빨간 「203호」 글씨는 그 자리(PLAN2_RED_TEXT_BOX)를 원본 그대로 되살린다."""
+    빨간 호실 글씨는 그 자리(text_box)를 원본 그대로 되살린다."""
     import numpy as np
     from PIL import Image, ImageFilter
     src = np.array(im.convert("RGB"))
@@ -126,16 +129,19 @@ def thicken_borders(im, grow=7):
     sat = (S > 110) & (V > 120)
     masks = {
         "red": sat & ((H >= 238) | (H <= 8)),
-        "sky": sat & (H >= 132) & (H <= 148),      # 테두리 하늘색(H≈140). 글씨 파랑은 H≈156
+        "sky": sat & (H >= 132) & (H <= 147),      # 테두리 하늘색(H≈140). 글씨 파랑은 H≈152~156
         "orange": sat & (H >= 12) & (H <= 24),
     }
-    x1, y1, x2, y2 = PLAN2_RED_TEXT_BOX
+    x1, y1, x2, y2 = text_box
     masks["red"][y1:y2, x1:x2] = False             # 글씨는 테두리로 보지 않음
 
     out = src.copy()
     colors = {"sky": (0, 140, 235), "orange": (255, 110, 0), "red": (225, 0, 0)}
     for key in ("sky", "orange", "red"):            # 빨강을 맨 나중에 칠해 임차목적물 경계가 위에 오게 함
-        m = Image.fromarray((masks[key] * 255).astype("uint8")).filter(ImageFilter.MaxFilter(grow))
+        # 먼저 3px 열림 연산으로 글씨 가장자리 등 작은 점을 지우고(선은 8px 안팎이라 남음), 그다음 넓힌다
+        m = (Image.fromarray((masks[key] * 255).astype("uint8"))
+             .filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(3))
+             .filter(ImageFilter.MaxFilter(grow)))
         out[np.array(m) > 127] = colors[key]
     out[y1:y2, x1:x2] = src[y1:y2, x1:x2]           # 「203호」 글씨 자리는 원본 그대로
     return Image.fromarray(out)
@@ -147,7 +153,8 @@ def make_plan2_marked():
     from PIL import Image, ImageDraw, ImageFont
     fonts = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
     font = ImageFont.truetype(os.path.join(fonts, "malgunbd.ttf"), 46)
-    im = thicken_borders(Image.open(PLAN2_SRC).convert("RGB"))
+    thicken_borders(Image.open(PLAN1_SRC).convert("RGB"), PLAN1_RED_TEXT_BOX).save(PLAN1_MARKED, quality=92)
+    im = thicken_borders(Image.open(PLAN2_SRC).convert("RGB"), PLAN2_RED_TEXT_BOX)
     d = ImageDraw.Draw(im)
     lh = 54                                                   # 줄 높이
     for text, cx, cy, color in PLAN2_MARKS:
@@ -503,6 +510,7 @@ def main():
     # 정정 별지 2의 사진 2만 공부상 호실 표시가 붙은 그림으로 바꾼다 (원본은 경매 소명서 등에 그대로 쓰임)
     make_plan2_marked()
     import build_hwp
+    build_hwp.PLAN_IMAGES[0] = PLAN1_MARKED
     build_hwp.PLAN_IMAGES[1] = PLAN2_MARKED
     out = os.path.join(HERE, "서류", "보정서_임차범위")
     pdf_out, word_out = os.path.join(out, "PDF"), os.path.join(out, "Word")
