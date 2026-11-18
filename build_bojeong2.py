@@ -38,20 +38,8 @@ ZLAB = {"짧게": "계약상", "그림옆": "＝ 임대차계약서상", "행이
         "행내용": "**나동 제203호** (임대차계약서 · 현장 출입문 · 주민등록)"}
 
 
-def make_zoom_image():
-    """공부상 202호 부분만 2.5배 확대하고, 위에 「공부상 202호 = 계약상 203호」 제목 띠를 붙인다."""
-    from PIL import Image, ImageDraw, ImageFont
-    fonts = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
-    big = ImageFont.truetype(os.path.join(fonts, "malgunbd.ttf"), 72)
-    mid = ImageFont.truetype(os.path.join(fonts, "malgunbd.ttf"), 52)
-    small = ImageFont.truetype(os.path.join(fonts, "malgun.ttf"), 40)
-    crop = Image.open(PLAN_SRC).convert("RGB").crop(ZOOM_BOX)
-    k = 2.5
-    crop = crop.resize((int(crop.width * k), int(crop.height * k)), Image.LANCZOS)
-    red, black = (210, 0, 0), (0, 0, 0)
-
-    # 도면 안의 빈 곳(빨간 실선 오른쪽)에 「= 계약상 나동 제203호」 표시
-    d = ImageDraw.Draw(crop)
+def _side_box(d, crop, k, mid, big, small, red, black):
+    """확대 그림 안 빨간 실선 오른쪽의 「＝ 계약상 나동 제203호」 상자와 화살표."""
     x0, y0 = int(330 * k), int(115 * k)
     lines = [(ZLAB["그림옆"], mid), ("나동 제203호", big), ("(현장 출입문 표시)", small)]
     w = max(d.textlength(t, font=f) for t, f in lines) + 60
@@ -66,6 +54,24 @@ def make_zoom_image():
     tx = int(300 * k)
     d.line((ax, ay, tx, ay), fill=red, width=10)
     d.polygon([(tx, ay), (tx + 45, ay - 25), (tx + 45, ay + 25)], fill=red)
+
+
+def make_zoom_image(out_path=None, side_box=True, t1=None):
+    """공부상 202호 부분만 2.5배 확대하고, 위에 「공부상 202호 = 계약상 203호」 제목 띠를 붙인다."""
+    from PIL import Image, ImageDraw, ImageFont
+    fonts = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
+    big = ImageFont.truetype(os.path.join(fonts, "malgunbd.ttf"), 72)
+    mid = ImageFont.truetype(os.path.join(fonts, "malgunbd.ttf"), 52)
+    small = ImageFont.truetype(os.path.join(fonts, "malgun.ttf"), 40)
+    crop = Image.open(PLAN_SRC).convert("RGB").crop(ZOOM_BOX)
+    k = 2.5
+    crop = crop.resize((int(crop.width * k), int(crop.height * k)), Image.LANCZOS)
+    red, black = (210, 0, 0), (0, 0, 0)
+
+    # 도면 안의 빈 곳(빨간 실선 오른쪽)에 「= 계약상 나동 제203호」 표시 (side_box=False 이면 생략: 3차)
+    d = ImageDraw.Draw(crop)
+    if side_box:
+        _side_box(d, crop, k, mid, big, small, red, black)
 
     # 흐린 도면 치수 숫자 위에 같은 숫자를 크게 덮어 쓴다 (파란 굵은 글씨, 흰 바탕).
     # 좌표는 잘라 낸 그림(ZOOM_BOX) 기준 원래 숫자의 가운데. 5,700은 2,500과 겹치지 않게 같은 치수선 위에서 아래로 내림
@@ -99,12 +105,12 @@ def make_zoom_image():
     out = Image.new("RGB", (crop.width, crop.height + band), "white")
     out.paste(crop, (0, band))
     d = ImageDraw.Draw(out)
-    t1 = f"공부상 제2층 제202호  ＝  {ZLAB['짧게']} 나동 제203호"
+    t1 = t1 or f"공부상 제2층 제202호  ＝  {ZLAB['짧게']} 나동 제203호"
     t2 = "신청인이 실제 점유하는 하나의 주택 (빨간색 실선 내부 전체)"
     d.text(((out.width - d.textlength(t1, font=big)) / 2, 25), t1, font=big, fill=red)
     d.text(((out.width - d.textlength(t2, font=mid)) / 2, 130), t2, font=mid, fill=black)
     d.rectangle((0, 0, out.width - 1, out.height - 1), outline=black, width=4)
-    out.save(ZOOM_IMAGE, quality=92)
+    out.save(out_path or ZOOM_IMAGE, quality=92)
 
 
 PLAN2_SRC = os.path.join(HERE, "자료", "별지2_사진2_현재호실.jpg")
