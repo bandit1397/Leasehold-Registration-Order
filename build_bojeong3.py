@@ -7,7 +7,7 @@
 공부상 203호와 다르다는 점만 짧게 밝힌다.
 
 임차범위는 build_hwp.C["임차범위"] 한 곳에서 정한다.
-사용법: python build_bojeong3.py   → 서류/보정서_임차범위_재정정/ 에 .hwp·PDF/·Word/ 생성
+사용법: python build_bojeong3.py   → 서류/의견서_임차범위/ 에 .hwp·PDF/·Word/ 생성
 """
 import os
 
@@ -144,7 +144,7 @@ def main():
     b2.make_zoom_image(ZOOM3_IMAGE, side_box=False, t1="공부상 제2층 제202호  (임차목적물)")
     b2.make_plan2_marked()
     build_hwp.PLAN_IMAGES[0] = b2.PLAN1_MARKED
-    out = os.path.join(HERE, "서류", "보정서_임차범위_재정정")
+    out = os.path.join(HERE, "서류", "의견서_임차범위")
     pdf_out, word_out = os.path.join(out, "PDF"), os.path.join(out, "Word")
     os.makedirs(pdf_out, exist_ok=True)
     os.makedirs(word_out, exist_ok=True)
