@@ -20,7 +20,7 @@ import build_bojeong2 as b2
 B = {
     "사건번호": "2026카임○○○",
     "사건명": "주택임차권등기",
-    "작성일": "2026. 11. 18.",     # 제출하는 날로 고칠 것 (정정 별지 2의 작성일에도 들어감)
+    "작성일": "2026. 11. 19.",     # 제출하는 날로 고칠 것 (정정 별지 2의 작성일에도 들어감)
     "종전임차범위": "제2층 제202호 전유부분 전부 12.37㎡ (임대차계약서상 표시: 나동 제203호)",
 }
 
@@ -64,7 +64,7 @@ def doc_bojeong3(b):
              "3. 임차목적물 확대 도면    1통"], indent=4)
     b.keep_last()
     b._p(B["작성일"], "body", "CENTER", before=4, keep=True)
-    b._p(f"신청인{sp*2}{C['신청인']}{sp*4}(인)", "body", "RIGHT", before=2, keep=True)
+    b._p(f"신청인{sp*2}{C['신청인']}", "body", "RIGHT", before=2, keep=True)   # 전자서명으로 (인) 생략
     b._p(f"{C['법원']} 귀중", "sub", "CENTER", before=6)
 
 
@@ -160,7 +160,21 @@ def main():
             b = hwp_cls()
             fn(b)
             b.save(os.path.join(out, name + ".hwp"))
+    merge_pdf(pdf_out, [n for n, *_ in docs])
     print("saved to", out)
+
+
+MERGED = "00_의견서_임차범위_합본(전자소송제출용)"
+
+
+def merge_pdf(pdf_dir, names):
+    """의견서 + 첨부 1~3 PDF를 순서대로 한 파일로 합친다 (전자소송에 한 번에 올리기용)."""
+    from pypdf import PdfWriter
+    w = PdfWriter()
+    for n in names:
+        w.append(os.path.join(pdf_dir, n + ".pdf"))
+    w.write(os.path.join(pdf_dir, MERGED + ".pdf"))
+    w.close()
 
 
 if __name__ == "__main__":
