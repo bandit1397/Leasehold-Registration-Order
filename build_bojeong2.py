@@ -33,6 +33,9 @@ PLAN_SRC = os.path.join(HERE, "자료", "별지2_사진1_공부상호실.jpg")
 ZOOM_IMAGE = os.path.join(HERE, "자료", "별지2_사진3_202호확대.jpg")
 # 별지2 사진 1(2400×1893)에서 공부상 202호(빨간 실선)와 오른쪽 치수선만 잘라 낸다
 ZOOM_BOX = (1422, 470, 2110, 975)
+# 확대 도면에서 「나동 제203호」를 부르는 이름 (2차 제출본 = 계약상, 3차 의견서 = 현장 표시: build_bojeong3 가 바꿈)
+ZLAB = {"짧게": "계약상", "그림옆": "＝ 임대차계약서상", "행이름": "계약상 표시",
+        "행내용": "**나동 제203호** (임대차계약서 · 현장 출입문 · 주민등록)"}
 
 
 def make_zoom_image():
@@ -50,7 +53,7 @@ def make_zoom_image():
     # 도면 안의 빈 곳(빨간 실선 오른쪽)에 「= 계약상 나동 제203호」 표시
     d = ImageDraw.Draw(crop)
     x0, y0 = int(330 * k), int(115 * k)
-    lines = [("＝ 임대차계약서상", mid), ("나동 제203호", big), ("(현장 출입문 표시)", small)]
+    lines = [(ZLAB["그림옆"], mid), ("나동 제203호", big), ("(현장 출입문 표시)", small)]
     w = max(d.textlength(t, font=f) for t, f in lines) + 60
     h = sum(f.size + 22 for _, f in lines) + 40
     d.rectangle((x0, y0, x0 + w, y0 + h), fill="white", outline=red, width=8)
@@ -96,7 +99,7 @@ def make_zoom_image():
     out = Image.new("RGB", (crop.width, crop.height + band), "white")
     out.paste(crop, (0, band))
     d = ImageDraw.Draw(out)
-    t1 = "공부상 제2층 제202호  ＝  계약상 나동 제203호"
+    t1 = f"공부상 제2층 제202호  ＝  {ZLAB['짧게']} 나동 제203호"
     t2 = "신청인이 실제 점유하는 하나의 주택 (빨간색 실선 내부 전체)"
     d.text(((out.width - d.textlength(t1, font=big)) / 2, 25), t1, font=big, fill=red)
     d.text(((out.width - d.textlength(t2, font=mid)) / 2, 130), t2, font=mid, fill=black)
@@ -173,13 +176,13 @@ def doc_zoom(b):
     """임차목적물(공부상 202호) 확대 도면 + 설명란."""
     same = f"공부상 {C['건물']} 제2층 제202호 전유부분 전체"
     b.title("임차목적물 확대 도면")
-    b.center(f"**(공부상) {C['건물']} 제2층 제202호 ＝ (계약상) 나동 제203호**")
+    b.center(f"**(공부상) {C['건물']} 제2층 제202호 ＝ ({ZLAB['짧게']}) 나동 제203호**")
     b.picture(ZOOM_IMAGE, width_mm=86)
     b.h("설 명 란")
     b.table([
         ["구분", "내용"],
         ["공부상 표시", f"**제2층 제202호 전유부분 전체 (전유면적 12.37㎡)**"],
-        ["계약상 표시", "**나동 제203호** (임대차계약서 · 현장 출입문 · 주민등록)"],
+        [ZLAB["행이름"], ZLAB["행내용"]],
         ["관계 · 실제 점유", f"**완전히 동일한 하나의 주택** — 신청인이 {C['전입일']} 인도받아 나누지 않은 전체를 "
                          "**실제 단독 점유** 중"],
         ["임차범위", f"{C['임차범위']}\n= 빨간색 실선 내부 전체 (확장형 발코니 · 원룸(주방) · 현관 · 욕실)"],
