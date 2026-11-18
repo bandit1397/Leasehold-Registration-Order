@@ -131,9 +131,9 @@ def doc_schedule2_3(b):
     b._p(f"작성자 : 신청인 {C['신청인']}", "body", "RIGHT")
 
 
-SCHEDULES = [("02_별지1_부동산및임차목적물의표시_재정정", doc_schedule1),
-             ("03_별지2_위치표시도면_재정정", doc_schedule2_3),
-             ("04_임차목적물_확대도면_재정정", doc_zoom3)]
+SCHEDULES = [("02_첨부1_별지1_부동산및임차목적물의표시", doc_schedule1),
+             ("03_첨부2_별지2_임차목적물위치표시도면", doc_schedule2_3),
+             ("04_첨부3_임차목적물_확대도면", doc_zoom3)]
 
 
 def main():
