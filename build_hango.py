@@ -175,6 +175,48 @@ def doc_hango(b):
     b._p(f"{C['법원']} 귀중", "sub", "CENTER", before=6)
 
 
+def doc_schedule2_hango(b):
+    """이의신청용 별지 2: 공부상 호실 도면(사진 1)과 현재 현장 호실 도면(사진 2)을 함께 싣고 대응관계를 밝힌다."""
+    b.title("별지 2  임차목적물 위치 표시 도면")
+    b.center(f"{C['건물']} 2층 평면도 ({C['현황도발급일']} 발급 건축물현황도에 표시)")
+    b.center(f"**임차범위 : {C['임차범위']}**")
+    b.center("— 빨간색 실선 내부 전체가 임차목적물 —")
+    b.caption("[사진 1]  공부상 호실 표시 (건축물현황도 · 등기기록 기준)")
+    b.picture(b2.PLAN1_MARKED, width_mm=98)
+    b.caption("[사진 2]  현재 현장에서 실제 사용되는 호실 표시")
+    b.picture(b2.PLAN2_MARKED, width_mm=98)
+    b.page_break()
+    b.h("1. 공부상 호실과 현장 호실의 대응관계")
+    b.table([
+        ["공부상 호실 (사진 1)", "현장 호실 (사진 2)", "비고"],
+        ["제2층 제201호", "현장 201호·202호", "1개 호실을 2개로 나누어 사용"],
+        ["**제2층 제202호**", "**현장 203호**",
+         "**임차목적물.** 나누지 않고 전체를 신청인이 단독 점유. 계약서·주민등록의 「나동 제203호」는 이 현장 표시임"],
+        ["제2층 제203호 (31.41㎡)", "현장 206호·207호",
+         f"엘리베이터에서 내리자마자 오른쪽. 다른 임차인의 임차권등기({b2.B['기존임차권등기']}) 있음. 신청인 점유 사실 없음"],
+        ["제2층 제204호", "현장 204호·205호", "1개 호실을 2개로 나누어 사용"],
+    ], weights=[25, 21, 54])
+    b.note("※ 피신청인이 2층 공부상 4개 호실을 현장에서 7개 호실(201호~207호)로 나누어 임대하고 있어, "
+           "현장 제202호~제207호는 모두 공부상 호수와 번호가 다름. 사진 2의 붉은·파란 「공부상 ○○호」 글씨는 "
+           "신청인이 대응관계를 보이기 위해 덧붙인 것임.")
+    b.h("2. 임차목적물의 특정")
+    b.table([
+        ["구분", "내용"],
+        ["임차목적물", f"**공부상 {C['건물']} 제2층 제202호 전유부분 전부** (현장 표시: 제203호)"],
+        ["공부상 전유면적", "12.37㎡ (집합건축물대장 · 등기기록)"],
+        ["위치", "엘리베이터에서 내려 복도 끝까지 들어간 곳의 왼쪽 호실 (공부상 제203호와 복도의 서로 반대쪽 끝)"],
+        ["임차범위", f"**{C['임차범위']}**\n= 사진 1 · 2에서 빨간색 실선으로 표시한 경계 내부 전체"],
+        ["도면 출처", f"원주시 발급 건축물현황도 (발급일 {C['현황도발급일']})"],
+    ], weights=[24, 76])
+    b.h("3. 점유")
+    b._p(f"신청인 {C['신청인']}은 {C['전입일']} 위 **공부상 제2층 제202호 전유부분 전부**(현장 제203호)를 "
+         "인도받아 그 전체를 현재까지 단독으로 점유하고 있음.",
+         "body", "JUSTIFY", keep=True)
+    b._p("", "body", "LEFT", keep=True)
+    b._p(f"작성일 : {C['작성일']}", "body", "CENTER", keep=True)
+    b._p(f"작성자 : 신청인 {C['신청인']}", "body", "RIGHT")
+
+
 def main():
     V.update(VARIANTS[0][1])
     C["작성일"] = B["작성일"]
@@ -186,8 +228,10 @@ def main():
     pdf_out, word_out = os.path.join(out, "PDF"), os.path.join(out, "Word")
     os.makedirs(pdf_out, exist_ok=True)
     os.makedirs(word_out, exist_ok=True)
+    # 별지 2만 이의신청용(공부상 도면 + 현장 도면)으로 바꾼다
+    schedules = [(n, doc_schedule2_hango if fn is b3.doc_schedule2_3 else fn) for n, fn in b3.SCHEDULES]
     docs = [(NAME, doc_hango, Pdf200, Docx15, Hwp200)] + \
-           [(n, fn, PdfBuilder, DocxBuilder, HwpBuilder) for n, fn in b3.SCHEDULES]
+           [(n, fn, PdfBuilder, DocxBuilder, HwpBuilder) for n, fn in schedules]
     for name, fn, pdf_cls, docx_cls, _ in docs:
         for cls, folder, ext in ((pdf_cls, pdf_out, ".pdf"), (docx_cls, word_out, ".docx")):
             b = cls()
