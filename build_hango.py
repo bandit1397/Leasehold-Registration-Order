@@ -182,9 +182,9 @@ def doc_schedule2_hango(b):
     b.center(f"**임차범위 : {C['임차범위']}**")
     b.center("— 빨간색 실선 내부 전체가 임차목적물 —")
     b.caption("[사진 1]  공부상 호실 표시 (건축물현황도 · 등기기록 기준)")
-    b.picture(b2.PLAN1_MARKED, width_mm=98)
+    b.picture(ELEV_PLAN1, width_mm=98)
     b.caption("[사진 2]  현재 현장에서 실제 사용되는 호실 표시")
-    b.picture(b2.PLAN2_MARKED, width_mm=98)
+    b.picture(ELEV_PLAN2, width_mm=98)
     b.page_break()
     b.h("1. 공부상 호실과 현장 호실의 대응관계")
     b.table([
@@ -197,8 +197,8 @@ def doc_schedule2_hango(b):
         ["제2층 제204호", "현장 204호·205호", "1개 호실을 2개로 나누어 사용"],
     ], weights=[25, 21, 54])
     b.note("※ 피신청인이 2층 공부상 4개 호실을 현장에서 7개 호실(201호~207호)로 나누어 임대하고 있어, "
-           "현장 제202호~제207호는 모두 공부상 호수와 번호가 다름. 사진 2의 붉은·파란 「공부상 ○○호」 글씨는 "
-           "신청인이 대응관계를 보이기 위해 덧붙인 것임.")
+           "현장 제202호~제207호는 모두 공부상 호수와 번호가 다름. 사진 2의 붉은·파란 「공부상 ○○호」 글씨와 "
+           "사진 1·2의 초록색 「엘리베이터」 표시는 신청인이 설명을 위해 덧붙인 것임.")
     b.h("2. 임차목적물의 특정")
     b.table([
         ["구분", "내용"],
@@ -267,6 +267,39 @@ def make_keyplan():
     im.crop(KEYPLAN_BOX).save(KEYPLAN_IMAGE, quality=92)
 
 
+# 별지 2 사진에 엘리베이터 위치 표시 (원본 사진 파일은 그대로 두고 이의신청용 파일을 따로 만든다)
+ELEV_PLAN1 = os.path.join(HERE, "자료", "별지2_사진1_공부상호실_엘리베이터.jpg")
+ELEV_PLAN2 = os.path.join(HERE, "자료", "별지2_사진2_현재호실_엘리베이터.jpg")
+ELEV_MARKS = [  # (원본, 결과, 엘리베이터 상자, 이름표 가운데)
+    (lambda: b2.PLAN1_MARKED, ELEV_PLAN1, KEY_ELEV, (360, 1075)),
+    (lambda: b2.PLAN2_MARKED, ELEV_PLAN2, (524, 668, 634, 762), (360, 830)),
+]
+
+
+def make_elev_plans():
+    from PIL import Image, ImageDraw, ImageFont
+    fonts = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
+    font = ImageFont.truetype(os.path.join(fonts, "malgunbd.ttf"), 46)
+    green = (0, 130, 60)
+    for src, out, box, (cx, cy) in ELEV_MARKS:
+        im = Image.open(src()).convert("RGB")
+        d = ImageDraw.Draw(im)
+        d.rectangle(box, outline=green, width=9)
+        t = "엘리베이터"
+        w = d.textlength(t, font=font)
+        x0, y0, x1, y1 = cx - w / 2 - 16, cy - 34, cx + w / 2 + 16, cy + 34
+        d.rectangle((x0, y0, x1, y1), fill="white", outline=green, width=6)
+        d.text((cx - w / 2, cy - 33), t, font=font, fill=green)
+        # 이름표에서 엘리베이터 상자 왼쪽 아래 모서리 쪽으로 화살표
+        tx, ty = box[0] - 6, box[3] - 10
+        d.line((x1, (y0 + y1) / 2 - 10, tx, ty), fill=green, width=7)
+        import math
+        ang = math.atan2(ty - ((y0 + y1) / 2 - 10), tx - x1)
+        for da in (2.6, -2.6):
+            d.line((tx, ty, tx + 34 * math.cos(ang + da), ty + 34 * math.sin(ang + da)), fill=green, width=7)
+        im.save(out, quality=92)
+
+
 def doc_zoom_hango(b):
     """이의신청용 확대 도면: 202호 확대 + 2층 전체 위치도(공부상 203호 위치 표시)."""
     b.title("임차목적물 확대 도면")
@@ -304,6 +337,7 @@ def main():
     b2.make_plan2_marked()
     build_hwp.PLAN_IMAGES[0] = b2.PLAN1_MARKED
     make_keyplan()
+    make_elev_plans()
     out = os.path.join(HERE, "서류", "이의신청_항고")
     pdf_out, word_out = os.path.join(out, "PDF"), os.path.join(out, "Word")
     os.makedirs(pdf_out, exist_ok=True)
