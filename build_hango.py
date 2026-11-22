@@ -217,6 +217,85 @@ def doc_schedule2_hango(b):
     b._p(f"작성자 : 신청인 {C['신청인']}", "body", "RIGHT")
 
 
+KEYPLAN_IMAGE = os.path.join(HERE, "자료", "확대도면_위치도_202호_203호.jpg")
+KEYPLAN_BOX = (470, 400, 2200, 1530)          # 사진 1(2400×1893)에서 2층 평면 전체 + 오른쪽 설명 자리
+KEY_202 = (1424, 493, 1708, 922)              # 공부상 202호 바깥 범위 (화살표 위치용)
+KEY_202_POLY = [(1425, 495), (1705, 495), (1710, 920), (1600, 920), (1597, 875), (1505, 875),
+                (1505, 780), (1420, 780)]   # 공부상 202호 빨간 실선 모양 (ㄱ자)
+KEY_203 = (560, 1042, 1152, 1452)             # 공부상 203호 (파란 실선 범위)
+KEY_ELEV = (571, 892, 704, 1014)              # 엘리베이터
+
+
+def make_keyplan():
+    """2층 전체 위치도: 공부상 202호(임차목적물, 빨강)와 공부상 203호(파랑)를 칠하고 이름표를 붙인다."""
+    from PIL import Image, ImageDraw, ImageFont
+    fonts = os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts")
+    f_big = ImageFont.truetype(os.path.join(fonts, "malgunbd.ttf"), 46)
+    f_mid = ImageFont.truetype(os.path.join(fonts, "malgunbd.ttf"), 36)
+    red, blue, black = (210, 0, 0), (0, 60, 200), (0, 0, 0)
+    base = Image.open(b2.PLAN1_MARKED).convert("RGBA")
+    over = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    od = ImageDraw.Draw(over)
+    od.polygon(KEY_202_POLY, fill=(255, 0, 0, 70))
+    od.rectangle(KEY_203, fill=(0, 90, 255, 70))
+    im = Image.alpha_composite(base, over).convert("RGB")
+    d = ImageDraw.Draw(im)
+
+    def label(lines, cx, cy, color):
+        w = max(d.textlength(t, font=f) for t, f in lines) + 36
+        h = sum(f.size + 14 for _, f in lines) + 20
+        x0, y0 = cx - w / 2, cy - h / 2
+        d.rectangle((x0, y0, x0 + w, y0 + h), fill="white", outline=color, width=6)
+        y = y0 + 12
+        for t, f in lines:
+            d.text((cx - d.textlength(t, font=f) / 2, y), t, font=f, fill=color)
+            y += f.size + 14
+        return x0, y0, x0 + w, y0 + h
+
+    # 공부상 202호 이름표: 빨간 실선 오른쪽 빈 곳, 화살표로 연결
+    bx0, by0, bx1, by1 = label([("공부상 202호", f_big), ("＝ 임차목적물", f_mid), ("(현장 203호, 12.37㎡)", f_mid)],
+                               1960, 700, red)
+    ay = (by0 + by1) / 2
+    d.line((bx0, ay, KEY_202[2] + 30, ay), fill=red, width=8)
+    d.polygon([(KEY_202[2] + 8, ay), (KEY_202[2] + 40, ay - 18), (KEY_202[2] + 40, ay + 18)], fill=red)
+    # 공부상 203호 이름표: 203호 안쪽 가운데
+    label([("공부상 203호 (31.41㎡)", f_big), ("현장 206·207호", f_mid), ("다른 임차인 임차권등기", f_mid)],
+          (KEY_203[0] + KEY_203[2]) / 2, KEY_203[3] - 105, blue)
+    # 엘리베이터 표시
+    d.rectangle(KEY_ELEV, outline=black, width=6)
+    label([("엘리베이터", f_mid)], (KEY_ELEV[0] + KEY_ELEV[2]) / 2 + 150, KEY_ELEV[1] - 40, black)
+    im.crop(KEYPLAN_BOX).save(KEYPLAN_IMAGE, quality=92)
+
+
+def doc_zoom_hango(b):
+    """이의신청용 확대 도면: 202호 확대 + 2층 전체 위치도(공부상 203호 위치 표시)."""
+    b.title("임차목적물 확대 도면")
+    b.center(f"**(공부상) {C['건물']} 제2층 제202호**")
+    b.picture(b3.ZOOM3_IMAGE, width_mm=72)
+    b.caption("[위치도]  2층 전체에서 공부상 제202호(임차목적물)와 공부상 제203호의 위치")
+    b.picture(KEYPLAN_IMAGE, width_mm=120)
+    b.page_break()
+    b.h("설 명 란")
+    b.table([
+        ["구분", "내용"],
+        ["임차목적물", "**공부상 제2층 제202호 전유부분 전부 (전유면적 12.37㎡)** — 현장 표시 제203호"],
+        ["임차범위", f"**{C['임차범위']}**\n= 빨간색 실선 내부 전체 (확장형 발코니 · 원룸(주방) · 현관 · 욕실)"],
+        ["실제 점유", f"신청인이 {C['전입일']} 인도받아 나누지 않은 전체를 **단독 점유** 중"],
+        ["공부상 제203호의 위치", f"**위치도의 파란색 부분** — 엘리베이터에서 내리자마자 오른쪽(평면도 아래 왼쪽). "
+                            f"전유면적 {b2.B['공부203면적']}, 현장 제206호·제207호로 나뉘어 사용, 다른 임차인의 "
+                            f"임차권등기({b2.B['기존임차권등기']}) 있음"],
+        ["두 호실의 관계", "공부상 제202호(평면도 위 오른쪽 끝)와 공부상 제203호(아래 왼쪽 끝)는 **복도의 서로 반대쪽 "
+                      "끝**에 있는 별개의 주택임. 신청인은 공부상 제203호를 임차하거나 점유한 사실이 없음"],
+        ["점 표시를 하지\n않은 이유", "임차범위가 건물의 일부가 아니라 **공부상 제202호 전유부분 전부**이므로 ㄱ·ㄴ·ㄷ 등의 "
+                         "점 표시 없이 **전유부분 외곽 경계(빨간색 실선)** 그대로 표시함"],
+        ["도면 출처 · 치수", f"원주시 발급 건축물현황도({C['현황도발급일']}) 2층 평면도 / 202호 가로 3,600 × 깊이 "
+                          "1,200 + 2,500 + 2,000mm (위치·경계 설명용, 면적은 대장의 12.37㎡ 기준)"],
+    ], weights=[22, 78])
+    b.note("※ 빨간색·파란색 실선과 색칠, 이름표, 「엘리베이터」 표시, 확대 그림의 제목·「확장형 발코니 깊이」 표시는 "
+           "신청인이 설명을 위해 덧붙인 것이고, 파란 상자의 숫자는 그 자리에 인쇄된 도면 치수(mm)를 크게 다시 쓴 "
+           "것임. 나머지는 건축물현황도 그대로임.")
+
+
 def main():
     V.update(VARIANTS[0][1])
     C["작성일"] = B["작성일"]
@@ -224,12 +303,14 @@ def main():
     b2.make_zoom_image(b3.ZOOM3_IMAGE, side_box=False, t1="공부상 제2층 제202호  (임차목적물)")
     b2.make_plan2_marked()
     build_hwp.PLAN_IMAGES[0] = b2.PLAN1_MARKED
+    make_keyplan()
     out = os.path.join(HERE, "서류", "이의신청_항고")
     pdf_out, word_out = os.path.join(out, "PDF"), os.path.join(out, "Word")
     os.makedirs(pdf_out, exist_ok=True)
     os.makedirs(word_out, exist_ok=True)
     # 별지 2만 이의신청용(공부상 도면 + 현장 도면)으로 바꾼다
-    schedules = [(n, doc_schedule2_hango if fn is b3.doc_schedule2_3 else fn) for n, fn in b3.SCHEDULES]
+    schedules = [(n, {b3.doc_schedule2_3: doc_schedule2_hango, b3.doc_zoom3: doc_zoom_hango}.get(fn, fn))
+                 for n, fn in b3.SCHEDULES]
     docs = [(NAME, doc_hango, Pdf200, Docx15, Hwp200)] + \
            [(n, fn, PdfBuilder, DocxBuilder, HwpBuilder) for n, fn in schedules]
     for name, fn, pdf_cls, docx_cls, _ in docs:
